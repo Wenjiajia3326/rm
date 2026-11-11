@@ -1,0 +1,30 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ST-Link Debug",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "servertype": "openocd",
+      "serverpath": "D:/jiajiawen/openocd-v0.12.0-i686-w64-mingw32/bin/openocd.exe",
+      "executable": "${workspaceFolder}/build/Debug/rm.elf",
+      "device": "STM32F103RCTx",
+      "configFiles": [
+        "interface/stlink.cfg",
+        "target/stm32f1x.cfg"
+      ],
+      "searchDir": [
+        "D:/jiajiawen/openocd-v0.12.0-i686-w64-mingw32/share/openocd/scripts"
+      ],
+      "openOCDLaunchCommands": [
+        "adapter speed 1000"
+      ],
+      "runToEntryPoint": "main",
+      "showDevDebugOutput": "raw",
+      "armToolchainPath": "C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin",
+      "gdbPath": "C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/gnu-gdb-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gdb.exe",
+      "preLaunchTask": "Build Debug"
+    }
+  ]
+}

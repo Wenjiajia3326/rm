@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Configure Debug",
+            "type": "process",
+            "command": "C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/cmake/4.3.1+st.1/bin/cmake.exe",
+            "args": ["--preset", "Debug"],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {"PATH": "C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin;C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/ninja/1.13.2+st.1/bin;${env:PATH}"}
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Debug",
+            "type": "process",
+            "command": "C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/cmake/4.3.1+st.1/bin/cmake.exe",
+            "args": ["--build", "--preset", "Debug"],
+            "dependsOn": "Configure Debug",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {"PATH": "C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin;C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/ninja/1.13.2+st.1/bin;${env:PATH}"}
+            },
+            "group": {"kind": "build", "isDefault": true},
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}
