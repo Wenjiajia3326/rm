@@ -1,8 +1,7 @@
 /**
  * @file    crc8.h
- * @brief   CRC-8/ATM（多项式 0x07，初值 0x00），视觉/遥控/舵机帧共用。
- *
- * 三处协议的校验范围一致：从 VER 开始到数据段结尾，不含帧头 AA 55。
+ * @brief   CRC-8/ATM（多项式 0x07，初值 0x00），各协议帧共用。
+ * @owner   电控B
  */
 
 #ifndef CRC8_H
@@ -11,12 +10,20 @@
 #include <stdint.h>
 
 /**
- * @brief 计算 CRC-8/ATM
- * @param data 数据首地址
- * @param len  字节数
+ * @brief 推进一个字节的 CRC 计算
+ * @param crc  上一次的计算结果（首次调用传 0）
+ * @param byte 本次参与计算的字节
+ * @return 更新后的 CRC 值
+ * @note   用于数据不连续存放（如环形缓冲）时逐字节累计
+ */
+uint8_t Crc8_Update(uint8_t crc, uint8_t byte);
+
+/**
+ * @brief 计算一段连续数据的 CRC-8/ATM
+ * @param data 数据首地址，len 字节内有效
+ * @param len  字节数（可为 0，返回初值 0x00）
  * @return 8 位校验值
- * @note  自检：对字符串 "123456789" 计算应得 0xF4
- * @note  覆盖范围按各协议定义（视觉/遥控均为 VER~PAYLOAD，不含帧头 AA 55）
+ * @note   自检：对 "123456789"（len=9）应得 0xF4
  */
 uint8_t Crc8_Calc(const uint8_t *data, uint16_t len);
 

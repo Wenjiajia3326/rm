@@ -14,16 +14,10 @@
 #define APP_CONFIG_H
 
 /* ===================== 〇、构建开关（比赛前按注释改） ===================== */
-#define APP_LOG_LEVEL           3       ///< 日志等级：1=只留错误(比赛) / 3=详细(开发) / 4=调试
-#define APP_SELFTEST_ENABLE     1       ///< 上电自检（CRC 自检、样例帧）：1=开(开发) / 0=关(比赛)
+#define APP_LOG_ENABLE          1       ///< 日志总开关：1=开(开发) / 0=关(比赛)
+#define APP_SELFTEST_ENABLE     1       ///< 上电自检：1=开(开发) / 0=关(比赛)
 #define APP_SERIAL_CMD_ENABLE   1       ///< 串口调试命令：1=开(开发) / 0=关(比赛)
-/* 比赛固件：APP_LOG_LEVEL=1、APP_SELFTEST_ENABLE=0、APP_SERIAL_CMD_ENABLE=0 */
-
-/* 日志等级取值 */
-#define LOG_LEVEL_ERR           1U      ///< 错误（链路断、动作超时、拒绝执行）
-#define LOG_LEVEL_WARN          2U      ///< 警告（丢帧、档位越界）
-#define LOG_LEVEL_INFO          3U      ///< 信息（状态迁移、模式切换）
-#define LOG_LEVEL_DBG           4U      ///< 调试（每帧数据、seq 统计）
+/* 比赛固件：三个都改成 0 */
 
 /* ===================== 一、通用帧结构（owner：电控B） ===================== */
 #define APP_FRAME_HEAD0                 0xAAU   ///< 帧头第 1 字节
@@ -88,16 +82,17 @@
 #define APP_MODE_COMP_MANUAL_V          2U      ///< 比赛-手动
 #define APP_MODE_ARM_DEBUG_V            3U      ///< 机械臂调试
 #define APP_MODE_CHASSIS_DEBUG_V        4U      ///< 底盘调试
-#define APP_MODE_NUM                    5U      ///< 模式数量
 
 #define TERRAIN_ROAD_V                  0U      ///< 平路
 #define TERRAIN_BUMP_V                  1U      ///< 颠簸
-#define TERRAIN_NUM                     2U      ///< 地形档数量（待电控A 确认，扩展只改此值）
 
-#define LEVEL_NUM                       3U      ///< 高度档数量（先 3 档，扩展只改此值）
-#define LEVEL_INDEX_MIN                 0U      ///< 高度档最小索引
 #define LOAD_EMPTY_V                    0U      ///< 空载
 #define LOAD_CARRY_V                    1U      ///< 携块
+
+/* ---- 数量：仅用于数组长度与边界检查，不对应任何取值 ---- */
+#define APP_MODE_NUM                    5U      ///< 模式数量
+#define TERRAIN_NUM                     2U      ///< 地形档数量（电控A 确认后调整）
+#define LEVEL_NUM                       3U      ///< 高度档数量（机械B 标定后调整）
 
 /* ===================== 五、舵机（owner：电控B，数值待机械B 标定） ===================== */
 #define SERVO_ID_LIFT                   1U      ///< 大臂升降
