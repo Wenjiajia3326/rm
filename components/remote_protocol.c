@@ -1,78 +1,140 @@
 /**
  * @file    remote_protocol.c
- * @brief   遥控帧解析：11 字节定长 + CRC8 校验，滑动窗口找帧头。
+ * @brief   遥控帧解析实现：15 字节定长 + CRC8 + seq 丢帧统计。
  * @owner   电控B
  *
- * 帧结构（偏移与协议表一致，便于对照）：
- *   [0] AA  [1] 55  [2] VER  [3] TYPE  [4] LEN
- *   [5] vx  [6] vy  [7] btn_low  [8] btn_high  [9] seq  [10] CRC8
- * CRC 覆盖 [2]~[9] 共 8 字节。
- *
- * 解析策略：不区分“找帧头/收数据”多个状态，只维护一个 11 字节滑动窗口；
- * 每来一个字节就进窗口，然后检查窗口前两字节是否为 AA 55：
- *   - 不是：丢掉窗口里最老的字节（整体左移一位），继续找；
- *   - 是  ：等收满 11 字节后校验版本/类型/长度/CRC。
+ * 解析策略：只维护一个 15 字节滑动窗口。
+ * 每来一个字节就压入窗口尾部；若窗口前两字节不是帧头，则丢掉最老字节整体左移；
+ * 帧头正确且收满 15 字节后，依次校验版本/类型/长度/CRC/字段范围。
  */
 
 #include "remote_protocol.h"
 #include "app_config.h"
 #include "crc8.h"
 
-/** 滑动窗口：始终保存最近收到的至多 11 个字节，偏移与协议表一一对应 */
+/** 滑动窗口：始终保存最近收到的至多 15 个字节，偏移与协议表一一对应 */
 static uint8_t s_frame[APP_FRAME_LEN_REMOTE];
 
-/** 窗口内当前有效字节数，取值 0~11；等于 11 表示可以尝试校验整帧 */
+/** 窗口内有效字节数（0~15），等于 15 时表示可以尝试校验整帧 */
 static uint8_t s_len;
 
-/** CRC 覆盖长度：VER~seq（不含帧头 AA 55，也不含 CRC 本身），即 11-3 = 8 字节 */
-#define REMOTE_CRC_SPAN                 (APP_FRAME_LEN_REMOTE - 3U)
+/** 是否已建立 seq 基准（首帧只建立基准，不参与丢帧计算） */
+static uint8_t s_have_last_seq;
+
+/** 上一帧的 seq */
+static uint8_t s_last_seq;
+
+/** 累计丢帧数（按 seq 跳变估算） */
+static uint32_t s_lost_count;
+
+/** 累计有效帧数 */
+static uint32_t s_frame_count;
 
 /**
- * @brief 复位解析器，清空滑动窗口
+ * @brief 复位解析器与统计量
  *
- * 上电初始化或需要丢弃当前半帧、重新寻找帧头时调用。
+ * 把窗口长度、seq 基准、两个计数清零。缓冲区内容不清（后续写入会覆盖）。
  *
  * @param  无
  * @return 无
  *
- * @note   只清 s_len，不清 s_frame 内容（后续写入会覆盖，没必要多一次清零开销）
- * @note   可在中断中调用；不要在解析过程中被另一个上下文并发调用
+ * @note   上电调用一次；重复调用会清零丢帧/收帧统计
  */
 void Remote_Init(void)
 {
     s_len = 0U;
+    s_have_last_seq = 0U;
+    s_last_seq = 0U;
+    s_lost_count = 0U;
+    s_frame_count = 0U;
+}
+
+/**
+ * @brief 校验解析出的档位/模式字段是否在合法范围
+ *
+ * @param d 已通过 CRC 校验的解析结果（不可为 NULL）
+ * @return 1 = 所有字段合法，0 = 存在越界字段
+ *
+ * @note   数量取自 app_config.h；手持端与主控配置不一致时，这里会持续拒收
+ * @note   纯判断，无副作用
+ */
+static uint8_t Remote_IsFieldValid(const RemoteData_t *d)
+{
+    if (d->mode >= APP_MODE_NUM)
+    {
+        return 0U;
+    }
+
+    if (d->terrain >= TERRAIN_NUM)
+    {
+        return 0U;
+    }
+
+    if (d->level >= LEVEL_NUM)
+    {
+        return 0U;
+    }
+
+    if (d->load > LOAD_CARRY_V)
+    {
+        return 0U;
+    }
+
+    return 1U;
+}
+
+/**
+ * @brief 用本帧 seq 更新丢帧统计
+ *
+ * @param seq 本帧序号（0~255）
+ * @return 无
+ *
+ * @note   delta = (uint8_t)(seq - last_seq)，天然处理 255->0 回绕：
+ *         delta==0 视为重复帧（不记丢帧）、delta==1 正常、delta>1 记 (delta-1) 个丢帧
+ * @note   首帧只建立基准，不计丢帧
+ */
+static void Remote_UpdateSeqStats(uint8_t seq)
+{
+    uint8_t delta;
+
+    if (s_have_last_seq == 0U)
+    {
+        s_have_last_seq = 1U;
+        s_last_seq = seq;
+        return;
+    }
+
+    delta = (uint8_t)(seq - s_last_seq);
+
+    if (delta > 1U)
+    {
+        s_lost_count += (uint32_t)(delta - 1U);
+    }
+
+    s_last_seq = seq;
 }
 
 /**
  * @brief 送入一个串口字节，尝试解析出一帧完整遥控数据
  *
- * 每调用一次只消耗一个字节：先把字节压入滑动窗口，再判断窗口前两字节是否为帧头；
- * 帧头不符时左移一位继续找，帧头相符且收满 11 字节时做版本/类型/长度与 CRC 校验。
+ * @param byte 串口收到的原始字节
+ * @param out  解析结果；仅返回 1 时写入，返回 0 时保持原内容
+ * @return 1 = 成功解析一帧（out 已填充）；0 = 未收齐或校验失败
  *
- * @param byte 刚从 UART 收到的原始字节
- * @param out  解析结果输出；**仅在返回 1 时被写入**，返回 0 时不修改其内容：
- *               - vx       : 前后，-100~100，+ 为前
- *               - vy       : 平移，-100~100，+ 为左
- *               - btn_low  : 低 8 键位图（RC_BTN_ARM_xxx / RC_BTN_ROT_xxx）
- *               - btn_high : 高 8 键位图（RC_BTN_MODE/OK/FINE_MODE/ESTOP/预留）
- *               - seq      : 帧序号 0~255，用于统计丢帧
- * @return 1 = 收到一帧完整且校验正确的数据（out 已填充）
- *         0 = 还没收齐，或帧头/版本/类型/长度/CRC 任意一项不符（该帧内容已丢弃，out 未动）
- *
- * @note   调用上下文：串口接收中断或串口接收任务，必须单线程调用，不可重入
- * @note   不阻塞；最坏情况每个字节做一次 10 字节的窗口左移，115200 波特率下可忽略
- * @note   解析失败只丢当前候选帧，不需要调用者清空接收缓冲，下一字节会自动重新同步
+ * @note   单线程调用（串口接收任务），不可重入
+ * @note   最坏情况每字节做一次 14 字节窗口左移，115200 下可忽略
  */
 uint8_t Remote_ParseByte(uint8_t byte, RemoteData_t *out)
 {
     uint8_t i;
+    RemoteData_t d;
 
     if (out == 0)
     {
         return 0U;
     }
 
-    /* 1. 新字节先进窗口；若计数器异常（理论上不会超过 11）则先复位，避免越界写 */
+    /* 1. 新字节进窗口；防御性复位，避免越界写 */
     if (s_len >= APP_FRAME_LEN_REMOTE)
     {
         s_len = 0U;
@@ -86,7 +148,7 @@ uint8_t Remote_ParseByte(uint8_t byte, RemoteData_t *out)
         return 0U;
     }
 
-    /* 3. 帧头不对：丢掉最老的一个字节，整体左移，继续往后找 */
+    /* 3. 帧头不符：丢掉最老的一个字节，整体左移，继续找 */
     if ((s_frame[0] != APP_FRAME_HEAD0) || (s_frame[1] != APP_FRAME_HEAD1))
     {
         for (i = 0U; i < (APP_FRAME_LEN_REMOTE - 1U); i++)
@@ -103,27 +165,64 @@ uint8_t Remote_ParseByte(uint8_t byte, RemoteData_t *out)
         return 0U;
     }
 
-    /* 5. 收满一帧：先查版本/类型/长度，再查 CRC；任一不符则整帧丢弃 */
+    /* 5. 收满一帧：先查版本/类型/长度，再查 CRC */
     s_len = 0U;
 
-    if ((s_frame[2] != APP_PROTOCOL_VER) ||
+    if ((s_frame[2] != APP_PROTOCOL_VER_RC) ||
         (s_frame[3] != APP_FRAME_TYPE_REMOTE) ||
         (s_frame[4] != APP_FRAME_LEN_REMOTE_DATA))
     {
         return 0U;
     }
 
-    if (Crc8_Calc(&s_frame[2], REMOTE_CRC_SPAN) != s_frame[APP_FRAME_LEN_REMOTE - 1U])
+    if (Crc8_Calc(&s_frame[2], APP_FRAME_RC_CRC_SPAN) != s_frame[APP_FRAME_LEN_REMOTE - 1U])
     {
         return 0U;
     }
 
-    /* 6. 校验通过，按协议表偏移填充结果 */
-    out->vx       = (int8_t)s_frame[5];
-    out->vy       = (int8_t)s_frame[6];
-    out->btn_low  = s_frame[7];
-    out->btn_high = s_frame[8];
-    out->seq      = s_frame[9];
+    /* 6. 按协议偏移填充结果 */
+    d.vx       = (int8_t)s_frame[5];
+    d.vy       = (int8_t)s_frame[6];
+    d.btn_low  = s_frame[7];
+    d.btn_high = s_frame[8];
+    d.mode     = s_frame[9];
+    d.terrain  = s_frame[10];
+    d.level    = s_frame[11];
+    d.load     = s_frame[12];
+    d.seq      = s_frame[13];
+
+    /* 7. 字段越界（手持端与主控档数配置不一致）直接丢弃 */
+    if (Remote_IsFieldValid(&d) == 0U)
+    {
+        return 0U;
+    }
+
+    /* 8. 有效帧：更新统计并交出结果 */
+    Remote_UpdateSeqStats(d.seq);
+    s_frame_count++;
+    *out = d;
 
     return 1U;
+}
+
+/**
+ * @brief 取累计丢帧数
+ * @param  无
+ * @return 由 seq 跳变估算的丢帧总数
+ * @note   仅用于诊断，不参与控制
+ */
+uint32_t Remote_GetLostCount(void)
+{
+    return s_lost_count;
+}
+
+/**
+ * @brief 取累计有效帧数
+ * @param  无
+ * @return 成功解析的帧数
+ * @note   30 Hz 下每秒增量约 30
+ */
+uint32_t Remote_GetFrameCount(void)
+{
+    return s_frame_count;
 }
