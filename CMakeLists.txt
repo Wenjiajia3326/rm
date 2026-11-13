@@ -49,6 +49,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     components/ramp.c
     components/pid.c
+    components/mecanum.c
 )
 
 # Add include paths
