@@ -11,6 +11,17 @@ typedef struct
     float output_max;
 } PidData;
 
+/// @brief 设置PI参数、输出范围，并清零积分
+/// @param pid 需要初始化的PI数据
+/// @param kp 比例系数，必须非负，单位为输出单位/误差单位
+/// @param ki 积分系数，必须非负，单位为输出单位/(误差单位*秒)
+/// @param output_min 输出下限，必须小于等于0
+/// @param output_max 输出上限，必须大于等于0，与积分和返回输出单位一致
+/// @return 1表示成功；0表示参数错误，原数据保持不变
+/// @note 数值参数必须有限，下限必须小于上限。
+///       初始化期间不能同时计算或修改同一份数据。
+int Pid_Init(PidData *pid, float kp, float ki,
+             float output_min, float output_max);
 /// @brief 计算一次PI输出，并更新积分
 /// @param pid 对应电机的PI数据，必须已经初始化
 /// @param target 目标值
