@@ -60,7 +60,6 @@
 #define VISION_MSG_TTL_MS               200U    ///< 消息有效期（ms）
 #define VISION_HB_TIMEOUT_MS            3000U   ///< 心跳超时（ms）
 #define VISION_ERROR_FRAME_MAX          10U     ///< 连续错误帧上限，超过判链路异常
-#define VISION_BOOT_GRACE_MS            5000U   ///< 上电宽限：这段时间内不报 vision_ok=0
 
 /* ===================== 三、遥控参数（owner：电控B） ===================== */
 #define RC_FRAME_RATE_HZ                30U     ///< 手柄发送频率（协议 V1.3 约定）
