@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.22)
 
+# 工具链文件必须在本文件最前面加载（先于 enable_language/project），
+# 这样 CMake 才知道目标是 arm-none-eabi 裸机工程，而不是 Windows 程序。
+# 这样 CLion / VS Code / 命令行都不需要额外配置 CMake profile。
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/gcc-arm-none-eabi.cmake")
+
 #
 # This file is generated only once,
 # and is not re-generated if converter is called multiple times.
@@ -21,8 +26,6 @@ endif()
 # Set the project name
 set(CMAKE_PROJECT_NAME rm)
 
-# Include toolchain file
-include("cmake/gcc-arm-none-eabi.cmake")
 
 # Enable compile command to ease indexing with e.g. clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
@@ -46,15 +49,22 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 # Add sources to executable
+# 用户代码分层：application / components / bsp
+# 目录为空时 glob 结果为空，不影响构建；新增 .c 后重新配置即可自动纳入
+file(GLOB_RECURSE USER_SRCS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/application/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/components/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/bsp/*.c"
+)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    components/ramp.c
-    components/pid.c
-    components/mecanum.c
+    ${USER_SRCS}
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    components
+    ${CMAKE_CURRENT_SOURCE_DIR}/application
+    ${CMAKE_CURRENT_SOURCE_DIR}/components
+    ${CMAKE_CURRENT_SOURCE_DIR}/bsp
 )
 
 # Add project symbols (macros)

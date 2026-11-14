@@ -1,3 +1,9 @@
 build
 mx.scratch
 !.settings
+# CLion 用户配置（含本机绝对路径，不共享）
+.idea/
+
+# CubeMX 6.18 生成但未被引用的残留文件（实际使用 STM32F103RCTx_FLASH.ld 与 gcc-arm-none-eabi.cmake）
+STM32F103xx_FLASH.ld
+cmake/starm-clang.cmake
