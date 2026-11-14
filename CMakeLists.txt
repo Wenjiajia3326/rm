@@ -40,17 +40,6 @@ message("Build type: " ${CMAKE_BUILD_TYPE})
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
 
-# FreeRTOS 的 CMSIS-RTOS2 适配层（freertos_os2.h）需要的编译宏
-# CubeMX 6.18 生成的 FreeRTOSConfig.h 缺少下面两项，且该文件会被重新生成覆盖，
-# 所以在这里用目录级定义补上（必须在 add_subdirectory 之前，才能作用到 FreeRTOS OBJECT 库）
-# 永久做法：CubeMX 里 FREERTOS → Config parameters → User Constants 增加同名常量
-add_compile_definitions("CMSIS_device_header=\"stm32f1xx.h\"")
-add_compile_definitions(INCLUDE_xSemaphoreGetMutexHolder=1)
-add_compile_definitions(INCLUDE_xTaskGetCurrentTaskHandle=1)
-# ST 版 FreeRTOSConfig.h 把 xPortSysTickHandler 映射成 SysTick_Handler，
-# 与 cmsis_os2.c 自带的 SysTick_Handler 重复定义，故禁用后者
-add_compile_definitions(USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION=1)
-
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
 

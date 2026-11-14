@@ -114,6 +114,7 @@ void MX_FREERTOS_Init(void) {
 void StartRobotTask(void *argument)
 {
   /* USER CODE BEGIN StartRobotTask */
+  (void)argument;
   /* Infinite loop */
   for(;;)
   {

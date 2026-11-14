@@ -143,6 +143,11 @@ standard names. */
 #define xPortSysTickHandler SysTick_Handler
 
 /* USER CODE BEGIN Defines */
+// 使用 CMSIS-RTOS V2 提供的 SysTick_Handler，转交 FreeRTOS 内核处理。
+#undef xPortSysTickHandler
+#define CMSIS_device_header "stm32f1xx.h"
+#define INCLUDE_xTaskGetCurrentTaskHandle 1
+#define INCLUDE_xSemaphoreGetMutexHolder 1
 /* Section where parameter definitions can be added (for instance, to override default ones in FreeRTOS.h) */
 /* USER CODE END Defines */
 
