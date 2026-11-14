@@ -24,7 +24,7 @@ TIM1 与 TIM5 保持 64MHz 定时器时钟，PSC=0、ARR=3199，PWM 20kHz，初�
 | 外接 CH340 调试 | USART1 | PA9 | PA10 | 共地；TX 接对方 RX，RX 接对方 TX |
 | 视觉通信 | USART3 | PB10 | PB11 | 与舵机独立 |
 | LoRa | UART4 | PC10 | PC11 | PB1=M0，PB5=M1，PC4=AUX |
-| 总线舵机，只发送 | UART5 | PC12 | 不启用 | PD2 配置为模拟输入；电气连接按舵机手册及原理图 |
+| 总线舵机，只发送 | UART5 | PC12 | 不启用 | PD2 保留 RX 引脚配置，但 UART5 为 TX only，无需接线；电气连接按舵机手册及原理图 |
 
 LoRa 按当前原理图保留三个辅助信号连接：PB1/LORA_M0 与 PB5/LORA_M1 为推挽输出，初始低电平；PC4/LORA_AUX 为无上下拉输入，不驱动模块 AUX 输出。M0/M1 的低低模式须与实际模块手册和配置一致。
 
@@ -36,6 +36,27 @@ LoRa 按当前原理图保留三个辅助信号连接：PB1/LORA_M0 与 PB5/LORA
 
 保持 HSI+PLL 64MHz、CMake、SWD（PA13/PA14），JTAG 禁用以释放 PA15/PB3/PB4。PA0 未配置，不承担底盘 PWM；本自制 PCB 的 PA8 是否接其他支路应以最终硬件为准，不沿用旧开发板 LED 假设。
 
-本次直接同步 .ioc 和生成代码中的对应配置；未调用 CubeMX 重新生成整个工程。后续重新生成时需使用匹配的 CubeMX/F1 固件版本，并复核 GPIO、UART5 与本表一致。
+本次直接同步 .ioc 和生成代码中的对应配置；随后已通过 CubeMX 6.11.1 在临时目录生成、审查并同步 DMA、RTOS、TIM6 配置。后续重新生成时需使用匹配的 CubeMX/F1 固件版本，并复核 GPIO、UART5 与本表一致。
 
 配置检查与固件编译由本次修改后执行；未上板验证。编译通过不等于电机、LoRa、视觉或舵机已经通信成功。
+
+## 电控 B 新增配置
+
+| 请求 | DMA 通道 | 方向 | 模式 |
+| --- | --- | --- | --- |
+| USART3_RX | DMA1_Channel3 | 外设到内存 | Circular |
+| USART3_TX | DMA1_Channel2 | 内存到外设 | Circular |
+| UART4_RX | DMA2_Channel3 | 外设到内存 | Circular |
+| UART4_TX | DMA2_Channel5 | 内存到外设 | Circular |
+
+均为字节传输、内存递增、外设地址固定、低 DMA 仲裁优先级；DMA 中断优先级为 5。DMA2_Channel5 使用 DMA2_Channel4_5 共用中断。MX_DMA_Init 在串口初始化前执行。
+
+CMSIS-RTOS V2：RobotTask，优先级 osPriorityNormal（24），栈 512 words / 2048 字节，动态分配，入口 StartRobotTask；RTOS heap 8192 字节，heap_4。当前任务只有 osDelay(1) 占位。
+
+HAL 时基改为 TIM6；SysTick 归 RTOS，不占额外引脚。为兼容 CubeMX 的异步模式生成，PD2 保留 UART5_RX 引脚配置，但 UART5 仍只发送，无需连接 PD2。
+
+CubeMX 遗漏的 freertos_mpool.h 和 freertos_os2.h 已从同版本 F1 V1.8.7 官方固件补齐；FreeRTOSConfig.h 的设备头、当前任务查询和 SysTick 兼容定义存于 USER CODE 区，重新生成须保留。
+
+DMA 尚未启动。电控 B 负责启动、缓冲区管理、回调、协议分包与错误恢复。TX Circular 启动后会重复发送缓冲区；若业务为逐帧单次发送，需协调改为 Normal。
+
+固件编译通过：RAM 14256/49152 字节（含 RTOS heap），FLASH 28780/262144 字节。未上板；仍有链接段 RWX 警告。
