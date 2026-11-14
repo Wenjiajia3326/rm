@@ -100,7 +100,7 @@ void BSP_Uart_Init(void)
     (void)HAL_UART_Receive_IT(&huart5, &s_channel[BSP_UART_SERVO].it_byte, 1U);
 }
 
-uint16_t BSP_Uart_GetLength(uint8_t port)
+uint16_t BSP_Uart_GetAvailableDataSize(uint8_t port)
 {
     const BspUartChannel_t *channel = &s_channel[port];
 
@@ -108,9 +108,9 @@ uint16_t BSP_Uart_GetLength(uint8_t port)
                       % channel->buffer_size);
 }
 
-uint16_t BSP_Uart_GetRemain(uint8_t port)
+uint16_t BSP_Uart_GetFreeSpace(uint8_t port)
 {
-    return (uint16_t)(s_channel[port].buffer_size - BSP_Uart_GetLength(port));
+    return (uint16_t)(s_channel[port].buffer_size - BSP_Uart_GetAvailableDataSize(port));
 }
 
 uint8_t BSP_Uart_ReadByte(uint8_t port, uint16_t index)
@@ -126,9 +126,31 @@ void BSP_Uart_AddReadIndex(uint8_t port, uint16_t length)
         (uint16_t)((s_channel[port].read_index + length) % s_channel[port].buffer_size);
 }
 
-void BSP_Uart_Send(uint8_t port, const uint8_t *data, uint16_t length)
+void BSP_Uart_SendData(uint8_t port, const uint8_t *data, uint16_t length)
 {
     (void)HAL_UART_Transmit(s_channel[port].huart, (uint8_t *)data, length, 10U);
+}
+
+/**
+ * @brief 重启 DMA 接收（UART 错误后的恢复）
+ *
+ * @param port 通道编号
+ * @return 无
+ *
+ * @note   重启前必须把读索引清零：HAL_UART_Receive_DMA 会把 DMA 的 CNDTR 复位成
+ *         buffer_size，写索引随之回到 0；若读索引还停在原处，新旧数据会错位。
+ *         丢掉的旧数据不用在意，协议层靠帧头 + CRC 重新同步。
+ * @note   先 Abort 再 Receive：错误后 HAL 的接收状态可能不是 READY，直接 Receive 会返回 BUSY。
+ * @note   仅中断上下文调用（HAL_UART_ErrorCallback）。
+ */
+static void BSP_Uart_RestartDmaRx(uint8_t port)
+{
+    BspUartChannel_t *channel = &s_channel[port];
+
+    channel->read_index = 0U;
+
+    (void)HAL_UART_AbortReceive(channel->huart);
+    (void)HAL_UART_Receive_DMA(channel->huart, channel->buffer, channel->buffer_size);
 }
 
 /**
@@ -149,14 +171,32 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 /**
  * @brief HAL 串口错误回调（覆盖弱符号）
+ *
  * @param huart 触发的串口句柄
  * @return 无
- * @note  接收溢出等错误会终止接收，必须重新启动，否则该口永远收不到数据
+ *
+ * @note  串口溢出（ORE）、帧错误等会中止接收：
+ *        - 舵机口是逐字节中断 → 重新启动 1 字节接收；
+ *        - 视觉/遥控是 DMA 循环接收 → 重新启动 DMA（否则该口永久静默）。
+ * @note  中断上下文：这里不做任何阻塞操作，也不打日志（日志阻塞约 7 ms）。
  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == UART5)
     {
         (void)HAL_UART_Receive_IT(huart, &s_channel[BSP_UART_SERVO].it_byte, 1U);
+        return;
+    }
+
+    if (huart->Instance == USART3)
+    {
+        BSP_Uart_RestartDmaRx(BSP_UART_VISION);
+        return;
+    }
+
+    if (huart->Instance == UART4)
+    {
+        BSP_Uart_RestartDmaRx(BSP_UART_REMOTE);
+        return;
     }
 }

@@ -125,7 +125,7 @@ uint8_t Remote_GetFrame(RemoteData_t *out)
 {
     RemoteData_t data;
 
-    while (BSP_Uart_GetLength(BSP_UART_REMOTE) >= APP_FRAME_LEN_REMOTE)
+    while (BSP_Uart_GetAvailableDataSize(BSP_UART_REMOTE) >= APP_FRAME_LEN_REMOTE)
     {
         /* 帧头不对：丢 1 字节继续找 */
         if ((BSP_Uart_ReadByte(BSP_UART_REMOTE, 0U) != APP_FRAME_HEAD0) ||

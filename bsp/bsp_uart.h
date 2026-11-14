@@ -39,14 +39,14 @@ void BSP_Uart_Init(void);
  * @param port 通道编号（BSP_UART_xxx）
  * @return 未处理字节数（0 表示无数据）
  */
-uint16_t BSP_Uart_GetLength(uint8_t port);
+uint16_t BSP_Uart_GetAvailableDataSize(uint8_t port);
 
 /**
  * @brief 获取缓冲区剩余空间
  * @param port 通道编号
  * @return 剩余可写字节数
  */
-uint16_t BSP_Uart_GetRemain(uint8_t port);
+uint16_t BSP_Uart_GetFreeSpace(uint8_t port);
 
 /**
  * @brief 读取缓冲区中相对读指针的第 index 个字节
@@ -73,6 +73,6 @@ void BSP_Uart_AddReadIndex(uint8_t port, uint16_t length);
  * @param length 字节数
  * @note   超时 10 ms；不要在 10 ms 主环里发送长数据
  */
-void BSP_Uart_Send(uint8_t port, const uint8_t *data, uint16_t length);
+void BSP_Uart_SendData(uint8_t port, const uint8_t *data, uint16_t length);
 
 #endif /* BSP_UART_H */

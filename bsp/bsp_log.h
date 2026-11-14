@@ -6,7 +6,8 @@
  * 设计说明：
  * 1) 只走 USART1（PA9/PA10 → 板载 CH340），调用方不需要指定通道；
  * 2) 发送是阻塞的：80 字节 @115200 约 6.9 ms，因此不要放在 10 ms 主环的每帧路径里；
- * 3) 通过宏 LOG(...) 调用；APP_LOG_ENABLE=0 时宏展开为空操作，编译后不产生代码。
+ * 3) 本文件只提供函数；开关 APP_LOG_ENABLE 与 LOG(...) 宏在 application/app_config.h，
+ *    这样 bsp 层不依赖 application 层（分层方向：app -> bsp）。
  *
  * 用法：
  *   LOG("mode -> %s\r\n", App_Robot_ModeName(mode));
@@ -17,7 +18,6 @@
 #define BSP_LOG_H
 
 #include <stdint.h>
-#include "app_config.h"
 
 /** 单条日志最大长度（字节）。80 B @115200 8N1 约阻塞 6.9 ms；超长会被截断 */
 #define BSP_LOG_MAX_LEN         80U
@@ -57,15 +57,5 @@ void BSP_Log_Print(const char *str);
  * @note  不支持 %f（不链接浮点 printf，省 FLASH）；小数请先换算成整数再打
  */
 void BSP_Log_PrintFormat(const char *fmt, ...);
-
-/* ---- 统一入口宏 ----------------------------------------------------------
- * APP_LOG_ENABLE != 0：展开成真正的函数调用；
- * APP_LOG_ENABLE == 0：展开成 ((void)0)，编译期消失，参数也不会被求值。
- */
-#if (APP_LOG_ENABLE != 0)
-#define LOG(...)                BSP_Log_PrintFormat(__VA_ARGS__)
-#else
-#define LOG(...)                ((void)0)
-#endif
 
 #endif /* BSP_LOG_H */

@@ -13,11 +13,20 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
+#include "bsp_log.h"    /* app -> bsp：应用层用日志函数，bsp 层不反向依赖 */
+
 /* ===================== 〇、构建开关（比赛前按注释改） ===================== */
 #define APP_LOG_ENABLE          1       ///< 日志总开关：1=开(开发) / 0=关(比赛)
 #define APP_SELFTEST_ENABLE     1       ///< 上电自检：1=开(开发) / 0=关(比赛)
 #define APP_SERIAL_CMD_ENABLE   1       ///< 串口调试命令：1=开(开发) / 0=关(比赛)
 /* 比赛固件：三个都改成 0 */
+
+/* ---- 日志宏：APP_LOG_ENABLE=0 时整段调用在编译期消失 ---- */
+#if (APP_LOG_ENABLE != 0)
+#define LOG(...)                BSP_Log_PrintFormat(__VA_ARGS__)
+#else
+#define LOG(...)                ((void)0)
+#endif
 
 /* ===================== 一、通用帧结构（owner：电控B） ===================== */
 #define APP_FRAME_HEAD0                 0xAAU   ///< 帧头第 1 字节
