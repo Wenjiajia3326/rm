@@ -11,9 +11,8 @@ typedef enum
     BSP_MOTOR_2,
     BSP_MOTOR_3,
     BSP_MOTOR_4,
-    BSP_MOTOR_COUNT // 接口总数，不是有效电机编号。
+    BSP_MOTOR_COUNT
 } BSPMotorId;
-
 /// @brief 启动四路编码器计数。
 /// @return 全部启动成功返回1；任一路失败返回0。
 /// @note CubeMX生成的四路编码器定时器初始化完成后调用。
@@ -50,11 +49,9 @@ uint8_t BSP_Motor_Output_Init(void);
 
 /// @brief 检查四路电机输出请求是否超时，超时通道设置为零输出。
 /// @param timeout_ms 允许的最大更新间隔，单位ms，必须大于0。
-/// @return 检查及归零操作成功返回1，包括发生超时；否则返回0。
+/// @return 检查成功返回1；未初始化成功或参数无效返回0。
 /// @note 由同一控制任务周期调用，时间使用HAL_GetTick()。
-///       达到超时即归零；新有效请求可恢复输出。
-///       归零也刷新时间，持续无请求时每隔timeout_ms再次归零。
-///       不能检测本任务卡死，也不代替遥控链路超时判断。
+///       不能检测调用本函数的任务自身卡死，也不代替遥控链路超时判断。
 uint8_t BSP_Motor_Check_Timeout(uint32_t timeout_ms);
 
 #endif

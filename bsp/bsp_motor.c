@@ -5,9 +5,12 @@
 
 // 四路PWM全部启动成功后才允许处理输出，初始化和输出由同一控制任务调用。
 static uint8_t motor_output_ready = 0;
-
-// 每路记录最近一次有效输出请求的时间，单位ms。
+// 分别保存四路最后一次成功设置输出的时刻，单位ms。
 static uint32_t motor_last_update_ms[BSP_MOTOR_COUNT];
+
+// 记录每一路是否有非零驱动请求，0表示无需进行超时置零。
+static uint8_t motor_output_active[BSP_MOTOR_COUNT];
+
 
 uint8_t BSP_Motor_Encoder_Init(void)
 {
@@ -171,17 +174,16 @@ uint8_t BSP_Motor_Set_Output(BSPMotorId motor_id,
     __HAL_TIM_SET_COMPARE(pwm_tim, pwm_channel, compare);
 
     __HAL_TIM_ENABLE_OCxPRELOAD(pwm_tim, pwm_channel);
-    __set_PRIMASK(saved_primask);
+    ___set_PRIMASK(saved_primask);
 
-    // 有效请求完成硬件设置后，更新本路时间。
-    motor_last_update_ms[motor_id] = HAL_GetTick();
-    return 1;
-}
+// 只有请求通过检查并写入硬件后，才更新对应记录。
+motor_last_update_ms[motor_id] = HAL_GetTick();
+motor_output_active[motor_id] = (duty != 0);
+
+return 
 uint8_t BSP_Motor_Output_Init(void)
 {
     uint8_t valid_count = 0;
-    uint32_t motor_index;
-    uint32_t now_ms;
 
     motor_output_ready = 0;
 
@@ -217,40 +219,6 @@ uint8_t BSP_Motor_Output_Init(void)
     valid_count += (HAL_TIM_PWM_Start(
         BSP_MOTOR_4_PWM_TIM, BSP_MOTOR_4_PWM_CHANNEL) == HAL_OK);
 
-    // 从初始化完成时开始计时。
-    now_ms = HAL_GetTick();
-    for (motor_index = 0; motor_index < BSP_MOTOR_COUNT; motor_index++)
-    {
-        motor_last_update_ms[motor_index] = now_ms;
-    }
-
     motor_output_ready = (valid_count == 4);
     return motor_output_ready;
-}
-uint8_t BSP_Motor_Check_Timeout(uint32_t timeout_ms)
-{
-    uint32_t now_ms;
-    uint32_t motor_index;
-    uint8_t success = 1;
-
-    if (motor_output_ready == 0 || timeout_ms == 0U)
-    {
-        return 0;
-    }
-
-    now_ms = HAL_GetTick();
-    for (motor_index = 0; motor_index < BSP_MOTOR_COUNT; motor_index++)
-    {
-        // 无符号减法处理计时回绕；需持续周期检查。
-        if ((uint32_t)(now_ms - motor_last_update_ms[motor_index]) >= timeout_ms)
-        {
-            // 复用输出接口归零，同时刷新时间。
-            if (BSP_Motor_Set_Output((BSPMotorId)motor_index, 0) == 0)
-            {
-                success = 0;
-            }
-        }
-    }
-
-    return success;
 }
