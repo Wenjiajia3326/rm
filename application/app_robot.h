@@ -1,10 +1,12 @@
 /**
  * @file    app_robot.h
- * @brief   整机调度入口：全局运行模式（比赛 / 机械臂调试 / 底盘调试）与后续阶段状态机。
+ * @brief   整机状态：把遥控帧里的模式/地形/高度/载荷转成机器人当前运行状态。
+ * @owner   电控B
  *
- * 上电默认停在 APP_MODE_INIT（选择态），需手柄 OK 确认后才进入某一模式。
- * 本模块只负责“模式与阶段”的决策，不直接操作硬件：
- * 底盘、舵机、串口等具体动作分别由 app_chassis / app_arm / app_vision 等模块执行。
+ * 职责边界：
+ *   手持端负责"选哪个模式/哪档"，主控只接收"已生效值"，不做候选逻辑；
+ *   模式变化时由本模块执行进入/退出动作（请求安全态、复位自动流程等）。
+ *   具体模式的流程逻辑将来放到 app_auto / app_arm 等文件，本模块只做分派。
  */
 
 #ifndef APP_ROBOT_H
@@ -12,63 +14,99 @@
 
 #include <stdint.h>
 
-/** 全局运行模式 */
-typedef enum
-{
-    APP_MODE_INIT        = 0,  ///< 初始态（选择态）：未确认进入任何模式，执行器保持安全态
-    APP_MODE_COMPETITION   = 1,  ///< 比赛模式：自动 60 s + 手动 240 s
-    APP_MODE_ARM_DEBUG     = 2,  ///< 机械臂调试：机械B 与电控B 标定零位/限位用
-    APP_MODE_CHASSIS_DEBUG = 3,  ///< 底盘调试：电控A 排查底盘与编码器用
-    APP_MODE_NUM          = 4   ///< 模式数量（仅用于边界检查）
-} AppMode_t;
-
 /**
- * @brief 初始化整机调度模块，复位到初始选择态（APP_MODE_INIT）
- * @note  在调度器启动后、任务循环开始前调用一次
+ * @brief 初始化整机状态
+ *
+ * 模式回初始态，地形/高度/载荷取默认值。
+ *
+ * @param  无
+ * @return 无
+ * @note   上电调用一次，必须在 BSP_Uart_Init() 之后
  */
 void App_Robot_Init(void);
 
 /**
- * @brief 周期调用（建议 10 ms），推进模式与后续阶段
- * @note  不阻塞；内部只做条件判断与状态迁移，不写硬件
+ * @brief 周期调用（10 ms），按当前模式分派流程
+ *
+ * 目前各模式分支为空占位；将来自动流程实现后，这里改成调用 App_Auto_Update()。
+ *
+ * @param  无
+ * @return 无
+ * @note   非阻塞；本函数不直接写执行器目标
  */
 void App_Robot_Update(void);
 
 /**
- * @brief 手柄 MODE 键：在 APP_MODE_INIT 态循环切换下一个模式
- * @note  已进入模式后忽略，避免比赛中误切
+ * @brief 应用遥控帧里的模式值
+ * @param mode 帧内 mode 字段（APP_MODE_*_V，协议层已校验范围）
+ * @return 无
+ * @note   模式变化时先执行旧模式退出动作，再执行新模式进入动作
+ * @note   模式未变化时函数立即返回，不做任何事
  */
-void App_Robot_OnModeKey(void);
+void App_Robot_ApplyMode(uint8_t mode);
 
 /**
- * @brief 手柄 OK 键：在 APP_MODE_INIT 态确认进入下一个模式
- * @return 1 = 已进入（或本来就已进入），0 = 当前安全条件不满足、未进入
- * @note  进入前会检查 App_Robot_IsSafeToSwitch()
+ * @brief 链路丢失时调用：强制回初始模式
+ * @param  无
+ * @return 无
+ * @note   由 app_remote 在超过 RC_RX_LOST_MS 未收到有效帧时调用
  */
-uint8_t App_Robot_OnOkKey(void);
+void App_Robot_OnLinkLost(void);
 
 /**
- * @brief 查询当前已进入的模式
- * @return 处于选择态时返回 APP_MODE_INIT
+ * @brief 取当前模式
+ * @param  无
+ * @return 当前模式（APP_MODE_*_V）
  */
-AppMode_t App_Robot_GetMode(void);
+uint8_t App_Robot_GetMode(void);
 
 /**
- * @brief 查询下一个模式（APP_MODE_INIT 态下由 MODE 键切换，OK 确认后进入）
+ * @brief 设置地形档（来自帧内 terrain 字段）
+ * @param terrain 地形档取值（TERRAIN_*_V）
+ * @return 无
  */
-AppMode_t App_Robot_GetNextMode(void);
+void App_Robot_SetTerrain(uint8_t terrain);
 
 /**
- * @brief 查询是否已进入某个模式
- * @return 1 = 已进入，0 = 仍在选择态
+ * @brief 取当前地形档
+ * @param  无
+ * @return 地形档取值
  */
-uint8_t App_Robot_IsEntered(void);
+uint8_t App_Robot_GetTerrain(void);
 
 /**
- * @brief 取模式名，用于串口日志
- * @param mode 模式枚举
- * @return 指向静态字符串，调用者不需要释放
+ * @brief 设置放置高度档（来自帧内 level 字段）
+ * @param level 高度档索引
+ * @return 无
  */
-const char *App_Robot_ModeName(AppMode_t mode);
+void App_Robot_SetLevel(uint8_t level);
+
+/**
+ * @brief 取当前放置高度档
+ * @param  无
+ * @return 高度档索引
+ */
+uint8_t App_Robot_GetLevel(void);
+
+/**
+ * @brief 设置载荷状态（来自帧内 load 字段）
+ * @param load LOAD_EMPTY_V / LOAD_CARRY_V
+ * @return 无
+ */
+void App_Robot_SetLoad(uint8_t load);
+
+/**
+ * @brief 取当前载荷状态
+ * @param  无
+ * @return LOAD_EMPTY_V / LOAD_CARRY_V
+ */
+uint8_t App_Robot_GetLoad(void);
+
+/**
+ * @brief 取模式名称字符串，用于日志
+ * @param mode 模式取值
+ * @return 静态字符串（"INIT"/"COMP_AUTO"/"COMP_MANUAL"/"ARM_DEBUG"/"CHASSIS_DEBUG"）
+ */
+const char *App_Robot_ModeName(uint8_t mode);
 
 #endif /* APP_ROBOT_H */

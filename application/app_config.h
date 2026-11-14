@@ -27,30 +27,31 @@
 
 /* 帧类型 */
 #define APP_FRAME_TYPE_VISION_ROUTE     0x10U   ///< 视觉：号码牌选路
-#define APP_FRAME_TYPE_VISION_LAMP      0x11U   ///< 视觉：信号灯颜色
+#define APP_FRAME_TYPE_VISION_LIGHT      0x11U   ///< 视觉：信号灯颜色
 #define APP_FRAME_TYPE_VISION_HB        0x12U   ///< 视觉：心跳
 #define APP_FRAME_TYPE_REMOTE           0x20U   ///< 遥控帧
 
 /* 整帧长度（字节） */
 #define APP_FRAME_LEN_VISION_ROUTE      10U     ///< 选路帧
-#define APP_FRAME_LEN_VISION_LAMP       10U     ///< 灯色帧
-#define APP_FRAME_LEN_VISION_HB         7U      ///< 心跳帧
+#define APP_FRAME_LEN_VISION_LIGHT       10U     ///< 灯色帧
+#define APP_FRAME_LEN_VISION_HB         8U      ///< 心跳帧（AA 55 01 12 02 state fps CRC）
 #define APP_FRAME_LEN_REMOTE            15U     ///< 遥控帧（V1.3：14→15，加回 seq）
 #define APP_FRAME_LEN_REMOTE_DATA       9U      ///< 数据段：vx/vy/btn_low/btn_high/mode/terrain/level/load/seq
 #define APP_FRAME_RC_CRC_SPAN           12U     ///< 遥控 CRC 覆盖偏移 2~13 共 12 字节
 
 /* 视觉数据字段取值 */
 #define VISION_ROUTE_INVALID            0U      ///< route = 0 表示没看见
-#define VISION_LAMP_UNKNOWN             0U      ///< color = 0 表示没看见
-#define VISION_LAMP_RED                 1U      ///< 红灯
-#define VISION_LAMP_GREEN               2U      ///< 绿灯
-#define VISION_LAMP_YELLOW              3U      ///< 黄灯
+#define VISION_LIGHT_UNKNOWN             0U      ///< color = 0 表示没看见
+#define VISION_LIGHT_RED                 1U      ///< 红灯
+#define VISION_LIGHT_GREEN               2U      ///< 绿灯
+#define VISION_LIGHT_YELLOW              3U      ///< 黄灯
 
 /* ===================== 二、视觉消息参数（owner：电控B） ===================== */
 #define VISION_CONF_MIN                 75U     ///< 置信度阈值（0-100，视觉C 确认）
 #define VISION_MSG_TTL_MS               200U    ///< 消息有效期（ms）
 #define VISION_HB_TIMEOUT_MS            3000U   ///< 心跳超时（ms）
 #define VISION_ERROR_FRAME_MAX          10U     ///< 连续错误帧上限，超过判链路异常
+#define VISION_BOOT_GRACE_MS            5000U   ///< 上电宽限：这段时间内不报 vision_ok=0
 
 /* ===================== 三、遥控参数（owner：电控B） ===================== */
 #define RC_FRAME_RATE_HZ                30U     ///< 手柄发送频率（协议 V1.3 约定）
