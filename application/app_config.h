@@ -66,6 +66,9 @@
 #define RC_FRAME_RATE_HZ                30U     ///< 手柄发送频率（协议 V1.3 约定）
 #define RC_JOY_DEADZONE                 8       ///< 摇杆死区（百分比，±8）
 #define RC_AXIS_MAX                     100     ///< 摇杆输出上限（百分比满速）
+#define RC_SNAP_RANGE_PCT               15      ///< 修正档吸附范围（%）：偏小的轴 <=15 才吸附到主轴
+#define RC_ROT_FAST_PCT                 100     ///< 快速旋转输出（百分比）
+#define RC_ROT_SLOW_PCT                 40      ///< 精细旋转输出（百分比，数值待定）
 #define RC_RX_WARN_MS                   150U    ///< 丢帧告警阈值（ms）
 #define RC_RX_LOST_MS                   300U    ///< 判定链路丢失（ms）
 #define RC_SEQ_MISS_WARN                5U      ///< 单次 seq 跳变超过该值即记一次链路抖动
