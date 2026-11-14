@@ -25,7 +25,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "app_config.h"
+#include "app_robot.h"
+#include "app_remote.h"
+#include "app_vision.h"
+#include "bsp_uart.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -115,10 +119,27 @@ void StartRobotTask(void *argument)
 {
   /* USER CODE BEGIN StartRobotTask */
   (void)argument;
-  /* Infinite loop */
+
+  /* 初始化顺序：串口 -> 日志 -> 整机状态 -> 各应用模块 */
+  BSP_Uart_Init();
+  BSP_Log_Init();
+  LOG("\r\n=== electB fw boot ===\r\n");
+
+  App_Robot_Init();
+  App_Remote_Init();
+  App_Vision_Init();
+
+  LOG("mode=%s period=%ums\r\n",
+      App_Robot_ModeName(App_Robot_GetMode()),
+      (unsigned int)APP_ROBOT_PERIOD_MS);
+
+  /* 10 ms 主环 */
   for(;;)
   {
-    osDelay(1);
+    App_Remote_Update();      /* 遥控帧：模式/档位、摇杆、按键、失联判断 */
+    App_Vision_Update();      /* 视觉帧：路线锁存、灯色时效、在线状态 */
+
+    osDelay(APP_ROBOT_PERIOD_MS);
   }
   /* USER CODE END StartRobotTask */
 }
