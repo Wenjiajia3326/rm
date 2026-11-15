@@ -79,4 +79,30 @@ void Servo_SetMinLimit(uint8_t id);
  */
 void Servo_SetMaxLimit(uint8_t id);
 
+/**
+ * @brief 暂停当前动作（保持位置，之后可继续）
+ * @param id 舵机 ID
+ * @return 无
+ * @note   比 Servo_Stop 温和：Servo_Stop 后需重新发目标才能动
+ */
+void Servo_Pause(uint8_t id);
+
+/**
+ * @brief 继续被暂停的动作
+ * @param id 舵机 ID
+ * @return 无
+ */
+void Servo_Resume(uint8_t id);
+
+/**
+ * @brief 设置开机行为：上电是否自动转到初始值
+ * @param id     舵机 ID
+ * @param enable 1 = 开机恢复扭力并转到初始值（PCSR）
+ *               0 = 开机释力，不自动转（PCSM）
+ * @return 无
+ * @note   出厂默认 PCSD=1500 且开机恢复力矩，上电瞬间臂会冲向 1500；
+ *         每只舵机发一次 PCSM 即可避免，之后一直有效。
+ */
+void Servo_SetBootTorque(uint8_t id, uint8_t enable);
+
 #endif /* SERVO_H */

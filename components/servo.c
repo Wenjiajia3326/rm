@@ -123,3 +123,37 @@ void Servo_SetMaxLimit(uint8_t id)
 
     Servo_SendCommand(cmd);
 }
+
+void Servo_Pause(uint8_t id)
+{
+    char cmd[SERVO_CMD_SIZE];
+
+    (void)snprintf(cmd, sizeof(cmd), "#%03uPDPT!", id);
+
+    Servo_SendCommand(cmd);
+}
+
+void Servo_Resume(uint8_t id)
+{
+    char cmd[SERVO_CMD_SIZE];
+
+    (void)snprintf(cmd, sizeof(cmd), "#%03uPDCT!", id);
+
+    Servo_SendCommand(cmd);
+}
+
+void Servo_SetBootTorque(uint8_t id, uint8_t enable)
+{
+    char cmd[SERVO_CMD_SIZE];
+
+    if (enable != 0U)
+    {
+        (void)snprintf(cmd, sizeof(cmd), "#%03uPCSR!", id);
+    }
+    else
+    {
+        (void)snprintf(cmd, sizeof(cmd), "#%03uPCSM!", id);
+    }
+
+    Servo_SendCommand(cmd);
+}
