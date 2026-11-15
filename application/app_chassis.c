@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include "motor.h"
 #include "pid.h"
+#include "app_config.h"
+
 
 // 本模块保存的整车速度目标，只允许通过接口修改。
 static ChassisSpeed chassis_target = {0};
@@ -33,7 +35,29 @@ static PidData pid_rear_right = {0};
 // 四轮PI全部配置成功后才置1；后续控制计算须先检查此标志。
 static uint8_t chassis_pi_ready = 0;
 
+// 底盘控制配置：具体参数来自app_config.h。
+// 计数范围由后续硬件初始化流程填写，目前0表示尚未准备好。
+static ChassisConfig chassis_config =
+{
+    .ramp =
+    {
+        .linear_accel = CHASSIS_LINEAR_ACCEL,
+        .linear_decel = CHASSIS_LINEAR_DECEL,
+        .angular_accel = CHASSIS_ANGULAR_ACCEL,
+        .angular_decel = CHASSIS_ANGULAR_DECEL
+    },
 
+    .mecanum =
+    {
+        .wheel_radius = CHASSIS_WHEEL_RADIUS_M,
+        .half_length = CHASSIS_HALF_LENGTH_M,
+        .half_width = CHASSIS_HALF_WIDTH_M
+    },
+
+    .max_wheel_speed = CHASSIS_MAX_WHEEL_SPEED_RAD_S,
+    .count_range = 0U,
+    .counts_per_rev = CHASSIS_COUNTS_PER_REV
+};
 void App_Chassis_Init(void)
 {
     chassis_target.vx = 0.0f;
@@ -350,4 +374,137 @@ uint8_t App_Chassis_Update(const ChassisConfig *config,
     }
 
     return 1;
+}
+uint8_t App_Chassis_Read_Encoder(const ChassisMotorMap *map,
+                                ChassisEncoder *encoder)//读取编码器的量
+{
+    ChassisEncoder next_encoder;
+
+    if (map == NULL || encoder == NULL)
+    {
+        return 0;
+    }
+
+    // 先读取到局部变量，避免失败时只更新一部分轮子的计数。
+    if (BSP_Motor_Read_Count(map->front_left,
+                            &next_encoder.front_left) == 0 ||
+        BSP_Motor_Read_Count(map->front_right,
+                            &next_encoder.front_right) == 0 ||
+        BSP_Motor_Read_Count(map->rear_left,
+                            &next_encoder.rear_left) == 0 ||
+        BSP_Motor_Read_Count(map->rear_right,
+                            &next_encoder.rear_right) == 0)
+    {
+        return 0;
+    }
+
+    // 四路全部成功后，再把完整结果交给调用者。
+    *encoder = next_encoder;
+    return 1;
+}
+uint8_t App_Chassis_Write_Output(const ChassisMotorMap *map,
+                                const ChassisOutput *output)//将四轮算好量给对应电机接口
+{
+    uint8_t valid_count = 0;
+
+    if (map == NULL || output == NULL)
+    {
+        return 0;
+    }
+
+    // 转成整数之前检查范围；这种写法也能拒绝NaN。
+    if (!(output->front_left >= -1000.0f &&
+          output->front_left <= 1000.0f) ||
+        !(output->front_right >= -1000.0f &&
+          output->front_right <= 1000.0f) ||
+        !(output->rear_left >= -1000.0f &&
+          output->rear_left <= 1000.0f) ||
+        !(output->rear_right >= -1000.0f &&
+          output->rear_right <= 1000.0f))
+    {
+        return 0;
+    }
+
+    // 每路都尝试设置，统计成功数量，不因一路失败跳过其他轮。
+    valid_count += BSP_Motor_Set_Output(
+        map->front_left, (int16_t)output->front_left);
+
+    valid_count += BSP_Motor_Set_Output(
+        map->front_right, (int16_t)output->front_right);
+
+    valid_count += BSP_Motor_Set_Output(
+        map->rear_left, (int16_t)output->rear_left);
+
+    valid_count += BSP_Motor_Set_Output(
+        map->rear_right, (int16_t)output->rear_right);
+
+    return valid_count == BSP_MOTOR_COUNT;
+}
+uint8_t App_Chassis_Control(const ChassisConfig *config,
+                           const ChassisMotorMap *map,
+                           uint8_t enabled,
+                           float dt_s)
+{
+    ChassisEncoder encoder;
+    ChassisOutput output = {0};
+    uint8_t control_valid;
+    uint32_t motor_index;
+
+    // 读取失败时传NULL，通知测速逻辑取消旧计数起点。
+    if (App_Chassis_Read_Encoder(map, &encoder) == 0)
+    {
+        control_valid = App_Chassis_Update(
+            config, NULL, enabled, dt_s, &output);
+    }
+    else
+    {
+        control_valid = App_Chassis_Update(
+            config, &encoder, enabled, dt_s, &output);
+    }
+
+    // 即使禁止运行或计算失败，也要执行Update给出的零输出。
+    if (App_Chassis_Write_Output(map, &output) == 0)
+    {
+        App_Chassis_Stop(&output);
+
+        // 不依赖可能出错的轮位映射，逐个尝试将四个接口归零。
+        for (motor_index = 0;
+             motor_index < BSP_MOTOR_COUNT;
+             motor_index++)
+        {
+            if (BSP_Motor_Set_Output(
+                    (BSPMotorId)motor_index, 0) == 0)
+            {
+                // 归零未成功，仍继续处理其他接口。
+                control_valid = 0;
+            }
+        }
+
+        return 0;
+    }
+
+    return control_valid;
+}
+uint8_t App_Chassis_Init_Hardware(void)
+{
+    uint8_t output_ready;
+    uint8_t encoder_ready;
+
+    // 清除旧范围，获取成功后再填入有效值。
+    chassis_config.count_range = 0U;
+
+    // 配置不符合当前测速要求时，不继续启动硬件。
+    if (BSP_Motor_Get_Encoder_Range(
+            &chassis_config.count_range) == 0)
+    {
+        return 0;
+    }
+
+    // PWM从零输出启动。
+    output_ready = BSP_Motor_Output_Init();
+
+    // 启动编码器，之后才能周期读取计数。
+    encoder_ready = BSP_Motor_Encoder_Init();
+
+    return output_ready && encoder_ready;
 }

@@ -120,4 +120,18 @@
 #define APP_ROBOT_TASK_STACK_WORDS      256U    ///< 主任务栈（word）
 #define APP_ROBOT_TASK_PRIORITY         3U      ///< 主任务优先级
 
+// 底盘控制参数，由电控A维护。
+// 0表示尚未确认，不是可直接运行的调试参数。
+#define CHASSIS_WHEEL_RADIUS_M       0.0f  // 轮子半径，单位m。
+#define CHASSIS_HALF_LENGTH_M        0.0f  // 前后轮中心距离的一半，单位m。
+#define CHASSIS_HALF_WIDTH_M         0.0f  // 左右轮中心距离的一半，单位m。
+
+#define CHASSIS_LINEAR_ACCEL         0.0f  // 平移加速度限制，单位m/s²。
+#define CHASSIS_LINEAR_DECEL         0.0f  // 平移减速度限制，单位m/s²。
+#define CHASSIS_ANGULAR_ACCEL        0.0f  // 旋转角加速度限制，单位rad/s²。
+#define CHASSIS_ANGULAR_DECEL        0.0f  // 旋转角减速度限制，单位rad/s²。
+
+#define CHASSIS_MAX_WHEEL_SPEED_RAD_S 0.0f // 轮轴角速度上限，单位rad/s。
+#define CHASSIS_COUNTS_PER_REV       0U   // 轮子一圈的最终编码器计数。
+
 #endif /* APP_CONFIG_H */

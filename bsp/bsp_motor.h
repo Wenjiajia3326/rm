@@ -54,4 +54,9 @@ uint8_t BSP_Motor_Output_Init(void);
 ///       不能检测调用本函数的任务自身卡死，也不代替遥控链路超时判断。
 uint8_t BSP_Motor_Check_Timeout(uint32_t timeout_ms);
 
+/// @brief 获取四路编码器统一的计数范围。
+/// @param count_range 接收计数位置总数，即Period加1。
+/// @return 四路范围一致且有效返回1，否则返回0，输出不变。
+/// @note CubeMX定时器初始化完成后调用，运行期间不得修改计数周期。
+uint8_t BSP_Motor_Get_Encoder_Range(uint32_t *count_range);
 #endif

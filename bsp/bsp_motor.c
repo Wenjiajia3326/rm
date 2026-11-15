@@ -33,6 +33,31 @@ uint8_t BSP_Motor_Encoder_Init(void)
     return valid_count == 4;
 }
 
+uint8_t BSP_Motor_Get_Encoder_Range(uint32_t *count_range)//读取四路编码器的计数范围，确认四路一致，再把范围交给应用层。
+{
+    uint32_t period;
+
+    if (count_range == NULL)
+    {
+        return 0;
+    }
+
+    // 当前测速接口使用16位计数，四路须使用相同计数范围。
+    period = BSP_MOTOR_1_ENCODER_TIM->Init.Period;
+
+    if (period < 1U ||
+        period > 65535U ||
+        BSP_MOTOR_2_ENCODER_TIM->Init.Period != period ||
+        BSP_MOTOR_3_ENCODER_TIM->Init.Period != period ||
+        BSP_MOTOR_4_ENCODER_TIM->Init.Period != period)
+    {
+        return 0;
+    }
+
+    // 从0数到period，总共有period加1个位置。
+    *count_range = period + 1U;
+    return 1;
+}
 uint8_t BSP_Motor_Read_Count(BSPMotorId motor_id,
                             uint16_t *count)
 {
@@ -83,7 +108,7 @@ uint8_t BSP_Motor_Set_Output(BSPMotorId motor_id,
     GPIO_PinState in2_state;
     GPIO_PinState current_in2;
     uint32_t saved_primask;
-
+}
     // PWM未初始化成功，或请求超出范围时，不操作硬件。
     if (motor_output_ready == 0 ||
         duty < -1000 || duty > 1000)

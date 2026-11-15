@@ -4,6 +4,8 @@
 
 #include <stdint.h>
 #include "mecanum.h"
+#include "bsp_motor.h"
+
 
 /// @brief 底盘目标变化的加减速限制。
 typedef struct
@@ -21,6 +23,14 @@ typedef struct
     uint16_t rear_left;    ///< 左后轮计数。
     uint16_t rear_right;   ///< 右后轮计数。
 } ChassisEncoder;
+/// @brief 四个轮位对应的电路板电机接口。
+typedef struct
+{
+    BSPMotorId front_left;   ///< 左前轮连接的电机接口。
+    BSPMotorId front_right;  ///< 右前轮连接的电机接口。
+    BSPMotorId rear_left;    ///< 左后轮连接的电机接口。
+    BSPMotorId rear_right;   ///< 右后轮连接的电机接口。
+} ChassisMotorMap;
 /// @brief 四轮驱动请求，单位为驱动千分比，正方向与轮速目标一致。
 typedef struct
 {
@@ -28,6 +38,7 @@ typedef struct
     float front_right;
     float rear_left;
     float rear_right;
+
 } ChassisOutput;
 /// @brief 一次底盘控制更新所需的配置。
 typedef struct
@@ -140,5 +151,31 @@ uint8_t App_Chassis_Update(const ChassisConfig *config,
                            uint8_t enabled,
                            float dt_s,
                            ChassisOutput *output);
+/// @brief 按轮位映射读取四轮编码器原始计数。
+/// @param map 四轮接口映射，只读；必须是四个有效且互不重复的接口。
+/// @param encoder 接收四轮计数，不是转速；不能为NULL。
+/// @return 全部读取成功返回1；任一失败返回0，输出保持不变。
+/// @note 编码器启动成功后，由同一控制任务调用；不保留指针。
+///       四路依次读取，不是硬件同时采样；不修正计数方向。
+uint8_t App_Chassis_Read_Encoder(const ChassisMotorMap *map,
+                                ChassisEncoder *encoder);
 
+/// @brief 完成一次底盘硬件读取、控制计算和输出。
+/// @param config 底盘算法配置，不保留指针。
+/// @param map 四个有效且互不重复的电机接口，不保留指针。
+/// @param enabled 0禁止运行，非0允许运行。
+/// @param dt_s 实际采样及控制间隔，单位s。
+/// @return 正常计算并输出返回1；禁止运行、首次采样或失败返回0。
+/// @note 底盘、PI、编码器和PWM初始化后，由同一控制任务周期调用。
+///       输出失败时清除控制状态，并尝试将全部四路输出归零。
+///       返回0不保证硬件归零成功；本函数不检测命令超时。
+uint8_t App_Chassis_Control(const ChassisConfig *config,
+                           const ChassisMotorMap *map,
+                           uint8_t enabled,
+                           float dt_s);
+/// @brief 从零输出启动电机PWM，并启动编码器。
+/// @return 两项初始化全部成功返回1，否则返回0。
+/// @note CubeMX外设初始化完成后，由控制任务调用一次。
+///       返回0时不得使能底盘；不配置PI，不支持运行中重新初始化。
+uint8_t App_Chassis_Init_Hardware(void);
 #endif
