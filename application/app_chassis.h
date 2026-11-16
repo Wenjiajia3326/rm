@@ -7,6 +7,21 @@
 #include "bsp_motor.h"
 
 
+/// @brief 底盘对外报告的运行状态。
+typedef enum
+{
+    CHASSIS_STATUS_NOT_READY = 0, ///< 尚未准备好，不接受运动请求。
+    CHASSIS_STATUS_IDLE,          ///< 没有自动任务，可按许可接收手动目标。
+    CHASSIS_STATUS_RUNNING,       ///< 自动任务执行中，包括短时丢线找回。
+    CHASSIS_STATUS_WAITING,       ///< 自动任务暂停等待，保留任务进度。
+    CHASSIS_STATUS_STOPPING,      ///< 正在减速结束或取消任务。
+    CHASSIS_STATUS_DONE,          ///< 自动任务正常完成，保留完成结果。
+    CHASSIS_STATUS_FAULT          ///< 出现故障，拒绝运动请求。
+} ChassisStatus;
+/// @brief 读取底盘当前运行状态。
+/// @return 当前状态，取值见ChassisStatus。
+/// @note 由同一RobotTask顺序调用；不修改状态，不操作硬件。
+ChassisStatus App_Chassis_GetStatus(void);
 /// @brief 底盘目标变化的加减速限制。
 typedef struct
 {
@@ -56,11 +71,19 @@ void App_Chassis_Init(void);
 
 /// @brief 保存底盘速度目标。
 /// @param target 车身速度；vx、vy单位m/s，wz单位rad/s。
-/// @return 成功返回1；空指针返回0，原目标不变。
-/// @note 输入数值须为有限值，正方向沿用ChassisSpeed定义。
+/// @return 接收成功返回1；非IDLE/DONE状态、空指针或非有限速度返回0，原目标不变。
+/// @note 仅IDLE或DONE状态接收手动目标；被拒绝的目标不缓存，恢复后须重新提交。
+/// @note 正方向沿用ChassisSpeed定义；本接口接收实际速度，不接收百分比。
 ///       复制目标内容，不保留传入指针；当前仅支持同一主循环顺序调用。
 ///       本函数不执行限速、控制计算或硬件输出。
-uint8_t App_Chassis_Set_Target(const ChassisSpeed *target);
+uint8_t App_Chassis_SetTarget(const ChassisSpeed *target);
+
+/// @brief 接收第一段循迹任务。
+/// @param route 路线编号，取值1~3。
+/// @return 接受返回1；底盘非IDLE/DONE状态或路线无效返回0，原任务不变。
+/// @note 同一RobotTask顺序调用；返回1不表示任务完成，不直接操作硬件。
+/// @note 当前仅保存任务请求；周期执行和取消逻辑接通前，暂不供状态机调用。
+uint8_t App_Chassis_StartLine1(uint8_t route);
 
 /// @brief 更新一次底盘平滑速度目标。
 /// @param config 加减速限制，只读；函数不保留此指针。

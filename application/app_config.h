@@ -145,6 +145,11 @@
 #define CHASSIS_ANGULAR_ACCEL        0.0f  // 旋转角加速度限制，单位rad/s²。
 #define CHASSIS_ANGULAR_DECEL        0.0f  // 旋转角减速度限制，单位rad/s²。
 
+// 手动速度上限，由电控A标定，电控B读取并换算摇杆目标。
+// 0表示尚未标定，暂不允许运动。
+#define CHASSIS_MAX_LINEAR_MPS  0.0f  // 前后、横移单轴满幅速度，单位m/s。
+#define CHASSIS_MAX_ANGULAR_RPS 0.0f  // 旋转满幅角速度，单位rad/s，不是圈/s。
+
 #define CHASSIS_MAX_WHEEL_SPEED_RAD_S 0.0f // 轮轴角速度上限，单位rad/s。
 #define CHASSIS_COUNTS_PER_REV       0U   // 轮子一圈的最终编码器计数。
 

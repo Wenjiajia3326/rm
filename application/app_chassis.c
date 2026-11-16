@@ -7,6 +7,26 @@
 #include "app_config.h"
 #include <math.h>
 
+/// @brief 底盘内部的自动任务类型。
+typedef enum
+{
+    CHASSIS_TASK_NONE = 0, ///< 没有自动任务。
+    CHASSIS_TASK_LINE1,    ///< 第一段循迹。
+    CHASSIS_TASK_LAP,      ///< 绕圈。
+    CHASSIS_TASK_TUNNEL,   ///< 通过隧道。
+    CHASSIS_TASK_LINE2     ///< 第二段循迹。
+} ChassisTask;
+// 记住当前自动任务，下一控制周期继续使用。
+static ChassisTask chassis_task = CHASSIS_TASK_NONE;
+// 本次任务选择的路线：1~3为有效路线，0表示尚未选择。
+static uint8_t chassis_route = 0U;
+
+// 1表示本次任务正常完成；0表示尚未完成，取消任务不能置1。
+static uint8_t chassis_task_done = 0U;
+
+// 当前底盘状态，由本模块管理，其他模块通过查询函数读取。
+static ChassisStatus chassis_status = CHASSIS_STATUS_NOT_READY;
+
 // 本模块保存的整车速度目标，只允许通过接口修改。
 static ChassisSpeed chassis_target = {0};
 
@@ -58,8 +78,20 @@ static ChassisConfig chassis_config =
     .count_range = 0U,
     .counts_per_rev = CHASSIS_COUNTS_PER_REV
 };
+ChassisStatus App_Chassis_GetStatus(void)
+{
+    return chassis_status;
+}
 void App_Chassis_Init(void)
 {
+    // 软件状态被重新初始化后，须重新完成启动流程。
+    chassis_status = CHASSIS_STATUS_NOT_READY;
+
+    // 重新初始化后，不继续执行之前的自动任务。
+    chassis_task = CHASSIS_TASK_NONE;
+    chassis_route = 0U;
+    chassis_task_done = 0U;
+
     chassis_target.vx = 0.0f;
     chassis_target.vy = 0.0f;
     chassis_target.wz = 0.0f;
@@ -92,16 +124,61 @@ void App_Chassis_Init(void)
     Pid_Reset(&pid_rear_right);
 }
 
-uint8_t App_Chassis_Set_Target(const ChassisSpeed *target)
+uint8_t App_Chassis_SetTarget(const ChassisSpeed *target)
 {
+    // 空闲或自动任务正常完成后，可接收手动目标；保留完成结果。
+    if (chassis_status != CHASSIS_STATUS_IDLE &&
+        chassis_status != CHASSIS_STATUS_DONE)
+    {
+        return 0;
+    }
+
     if (target == NULL)
     {
         return 0;
     }
 
+    // 拒绝NaN和无穷值，避免无效目标进入斜坡和PI计算。
+    if (!isfinite(target->vx) ||
+        !isfinite(target->vy) ||
+        !isfinite(target->wz))
+    {
+        return 0;
+    }
+
+    // 复制三个速度值，不保存调用者的指针。
     chassis_target = *target;
     return 1;
 }
+uint8_t App_Chassis_StartLine1(uint8_t route)
+{
+    // 空闲或上一任务正常完成后，才能接收新任务。
+    if (chassis_status != CHASSIS_STATUS_IDLE &&
+        chassis_status != CHASSIS_STATUS_DONE)
+    {
+        return 0;
+    }
+
+    // 路线只允许1、2、3。
+    if (route < 1U || route > 3U)
+    {
+        return 0;
+    }
+
+    // 清除旧手动目标，后续由循迹逻辑生成新目标。
+    chassis_target.vx = 0.0f;
+    chassis_target.vy = 0.0f;
+    chassis_target.wz = 0.0f;
+
+    chassis_task = CHASSIS_TASK_LINE1;
+    chassis_route = route;
+    chassis_task_done = 0U;
+
+    chassis_status = CHASSIS_STATUS_RUNNING;
+
+    return 1;
+}
+
 uint8_t App_Chassis_Update_Ramp(const ChassisRampConfig *config,
                                float dt_s)
 {
@@ -583,12 +660,41 @@ uint8_t App_Chassis_Start(void)
         return 0;
     }
 
+    // 配置、PI和硬件均已准备成功，目前没有自动任务占用。
+    chassis_status = CHASSIS_STATUS_IDLE;
+
     return 1;
 }
 uint8_t App_Chassis_Run(const ChassisMotorMap *map,
                        uint8_t enabled,
                        float dt_s)
 {
+    // 根据当前任务，决定本周期是否允许执行运动控制。
+    switch (chassis_task)
+    {
+        case CHASSIS_TASK_NONE:
+        {
+            // 没有自动任务，沿用B传入的运动许可。
+            // 手动目标由SetTarget保存。
+            break;
+        }
+
+        case CHASSIS_TASK_LINE1:
+        {
+            // 第一段循迹尚未接入纠偏计算，暂时保持零输出。
+            enabled = 0U;
+            break;
+        }
+
+        default:
+        {
+            // 其他自动任务尚未实现，暂时保持零输出。
+            enabled = 0U;
+            break;
+        }
+    }
+
+    // 无论是否允许运动，都继续执行采样和相应的输出处理。
     return App_Chassis_Control(
         &chassis_config, map, enabled, dt_s);
 }
