@@ -134,4 +134,13 @@
 #define CHASSIS_MAX_WHEEL_SPEED_RAD_S 0.0f // 轮轴角速度上限，单位rad/s。
 #define CHASSIS_COUNTS_PER_REV       0U   // 轮子一圈的最终编码器计数。
 
+// 速度PI参数，等待实车调试确认。
+#define CHASSIS_SPEED_KP             0.0f
+#define CHASSIS_SPEED_KI             0.0f
+#define CHASSIS_SPEED_INTEGRAL_MAX   0.0f
+
+// 驱动请求范围，单位为千分比。
+#define CHASSIS_SPEED_OUTPUT_MIN     (-1000.0f)
+#define CHASSIS_SPEED_OUTPUT_MAX     1000.0f
+
 #endif /* APP_CONFIG_H */

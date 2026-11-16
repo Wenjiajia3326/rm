@@ -178,4 +178,20 @@ uint8_t App_Chassis_Control(const ChassisConfig *config,
 /// @note CubeMX外设初始化完成后，由控制任务调用一次。
 ///       返回0时不得使能底盘；不配置PI，不支持运行中重新初始化。
 uint8_t App_Chassis_Init_Hardware(void);
+/// @brief 检查配置，初始化底盘软件、四轮PI和硬件。
+/// @return 全部准备成功返回1，否则返回0。
+/// @note CubeMX初始化完成后，由控制任务首次启动时调用一次。
+///       不设置运动目标，不支持运行中重启。
+///       返回0时不得允许运行。
+uint8_t App_Chassis_Start(void);
+
+/// @brief 使用本模块的底盘配置，执行一次控制。
+/// @param map 四轮对应的电机接口，不保留指针。
+/// @param enabled 0禁止运行，非0允许运行。
+/// @param dt_s 本次实际控制间隔，单位s。
+/// @return 正常控制返回1；禁止运行、首次采样或失败返回0。
+/// @note App_Chassis_Start成功后，由同一控制任务周期调用。
+uint8_t App_Chassis_Run(const ChassisMotorMap *map,
+                       uint8_t enabled,
+                       float dt_s);
 #endif

@@ -108,7 +108,6 @@ uint8_t BSP_Motor_Set_Output(BSPMotorId motor_id,
     GPIO_PinState in2_state;
     GPIO_PinState current_in2;
     uint32_t saved_primask;
-}
     // PWM未初始化成功，或请求超出范围时，不操作硬件。
     if (motor_output_ready == 0 ||
         duty < -1000 || duty > 1000)
@@ -199,13 +198,14 @@ uint8_t BSP_Motor_Set_Output(BSPMotorId motor_id,
     __HAL_TIM_SET_COMPARE(pwm_tim, pwm_channel, compare);
 
     __HAL_TIM_ENABLE_OCxPRELOAD(pwm_tim, pwm_channel);
-    ___set_PRIMASK(saved_primask);
+    __set_PRIMASK(saved_primask);
 
-// 只有请求通过检查并写入硬件后，才更新对应记录。
-motor_last_update_ms[motor_id] = HAL_GetTick();
-motor_output_active[motor_id] = (duty != 0);
+    // 只有请求通过检查并写入硬件后，才更新对应记录。
+    motor_last_update_ms[motor_id] = HAL_GetTick();
+    motor_output_active[motor_id] = (duty != 0);
 
-return 
+    return 1;
+}
 uint8_t BSP_Motor_Output_Init(void)
 {
     uint8_t valid_count = 0;

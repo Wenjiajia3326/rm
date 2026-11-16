@@ -5,7 +5,7 @@
 #include "motor.h"
 #include "pid.h"
 #include "app_config.h"
-
+#include <math.h>
 
 // 本模块保存的整车速度目标，只允许通过接口修改。
 static ChassisSpeed chassis_target = {0};
@@ -507,4 +507,88 @@ uint8_t App_Chassis_Init_Hardware(void)
     encoder_ready = BSP_Motor_Encoder_Init();
 
     return output_ready && encoder_ready;
+}
+// 启动前检查应用参数；编码器计数范围稍后从BSP获取。
+static uint8_t App_Chassis_Check_Config(void)
+{
+    // 几何尺寸必须为有限正数，单位为米。
+    if (!isfinite(chassis_config.mecanum.wheel_radius) ||
+        !isfinite(chassis_config.mecanum.half_length) ||
+        !isfinite(chassis_config.mecanum.half_width) ||
+        chassis_config.mecanum.wheel_radius <= 0.0f ||
+        chassis_config.mecanum.half_length <= 0.0f ||
+        chassis_config.mecanum.half_width <= 0.0f)
+    {
+        return 0;
+    }
+
+    // 斜坡和轮速上限不能使用尚未确认的零值。
+    if (!isfinite(chassis_config.ramp.linear_accel) ||
+        !isfinite(chassis_config.ramp.linear_decel) ||
+        !isfinite(chassis_config.ramp.angular_accel) ||
+        !isfinite(chassis_config.ramp.angular_decel) ||
+        !isfinite(chassis_config.max_wheel_speed) ||
+        chassis_config.ramp.linear_accel <= 0.0f ||
+        chassis_config.ramp.linear_decel <= 0.0f ||
+        chassis_config.ramp.angular_accel <= 0.0f ||
+        chassis_config.ramp.angular_decel <= 0.0f ||
+        chassis_config.max_wheel_speed <= 0.0f ||
+        chassis_config.counts_per_rev == 0U)
+    {
+        return 0;
+    }
+
+    // PI的大小关系由Pid_Init检查；这里补充有限值和驱动输出范围检查。
+    if (!isfinite(CHASSIS_SPEED_KP) ||
+        !isfinite(CHASSIS_SPEED_KI) ||
+        !isfinite(CHASSIS_SPEED_INTEGRAL_MAX) ||
+        !isfinite(CHASSIS_SPEED_OUTPUT_MIN) ||
+        !isfinite(CHASSIS_SPEED_OUTPUT_MAX) ||
+        CHASSIS_SPEED_OUTPUT_MIN < -1000.0f ||
+        CHASSIS_SPEED_OUTPUT_MIN > 0.0f ||
+        CHASSIS_SPEED_OUTPUT_MAX < 0.0f ||
+        CHASSIS_SPEED_OUTPUT_MAX > 1000.0f)
+    {
+        return 0;
+    }
+
+    return 1;
+}
+uint8_t App_Chassis_Start(void)
+{
+    // 清除旧目标、测速历史和PI状态。
+    App_Chassis_Init();
+
+    // 检查底盘配置。
+    if (App_Chassis_Check_Config() == 0)
+    {
+        return 0;
+    }
+
+    // 配置四轮PI，各轮积分独立。
+    if (App_Chassis_Init_PI(
+            CHASSIS_SPEED_KP,
+            CHASSIS_SPEED_KI,
+            CHASSIS_SPEED_INTEGRAL_MAX,
+            CHASSIS_SPEED_OUTPUT_MIN,
+            CHASSIS_SPEED_OUTPUT_MAX) == 0)
+    {
+        return 0;
+    }
+
+    // 启动PWM和编码器。
+    if (App_Chassis_Init_Hardware() == 0)
+    {
+        App_Chassis_Init();
+        return 0;
+    }
+
+    return 1;
+}
+uint8_t App_Chassis_Run(const ChassisMotorMap *map,
+                       uint8_t enabled,
+                       float dt_s)
+{
+    return App_Chassis_Control(
+        &chassis_config, map, enabled, dt_s);
 }
