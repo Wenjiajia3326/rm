@@ -10,7 +10,7 @@
  *    这样 bsp 层不依赖 application 层（分层方向：app -> bsp）。
  *
  * 用法：
- *   LOG("mode -> %s\r\n", App_Robot_ModeName(mode));
+ *   LOG("mode -> %s\r\n", App_Robot_GetModeName(mode));
  *   LOG("rx=%lu lost=%lu\r\n", Remote_GetFrameCount(), Remote_GetLostCount());
  */
 

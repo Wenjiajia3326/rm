@@ -25,6 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "app_arm.h"
 #include "app_chassis.h"
 #include "app_config.h"
 #include "app_robot.h"
@@ -144,10 +145,11 @@ void StartRobotTask(void *argument)
     App_Robot_Init();
     App_Remote_Init();
     App_Vision_Init();
+    App_Arm_Init();
 
     LOG("\r\n=== AB fw boot ===\r\n");
     LOG("mode=%s period=%ums\r\n",
-        App_Robot_ModeName(App_Robot_GetMode()),
+        App_Robot_GetModeName(App_Robot_GetMode()),
         (unsigned int)CHASSIS_CONTROL_PERIOD_MS);
 
     // 仅启动一次，保存底盘是否准备成功。
@@ -165,6 +167,7 @@ void StartRobotTask(void *argument)
         // 通信始终更新，不受底盘配置是否准备成功影响。
         App_Remote_Update(); // 处理遥控帧、模式、按键和失联判断。
         App_Vision_Update(); // 处理视觉路线、灯色和在线状态。
+        App_Arm_Update();    // 推进机械臂分段动作。
 
         current_ms = HAL_GetTick(); // 记录本轮实际开始处理的毫秒时刻。
         elapsed_ms = current_ms - previous_ms; // 本次减上次，得到实际间隔。

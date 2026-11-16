@@ -66,7 +66,7 @@ static void App_Robot_EnterMode(uint8_t mode)
     }
 
     LOG("mode -> %s (terrain=%u level=%u load=%u)\r\n",
-        App_Robot_ModeName(mode), s_terrain, s_level, s_load);
+        App_Robot_GetModeName(mode), s_terrain, s_level, s_load);
 }
 
 /**
@@ -175,7 +175,7 @@ uint8_t App_Robot_GetLoad(void)
     return s_load;
 }
 
-const char *App_Robot_ModeName(uint8_t mode)
+const char *App_Robot_GetModeName(uint8_t mode)
 {
     switch (mode)
     {
