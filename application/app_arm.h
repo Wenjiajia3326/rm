@@ -63,7 +63,7 @@ void App_Arm_Update(void);
  * @note   执行中收到新请求会被忽略（打日志）；
  *         A/B/D 要求进入时为空载，C 要求进入时为携块，不满足则拒绝
  */
-void App_Arm_Motion(ArmAction_t action);
+void App_Arm_Set_Action(ArmAction_t action);
 
 /**
  * @brief 查询是否正在执行动作

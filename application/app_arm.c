@@ -3,8 +3,8 @@
  * @brief   机械臂动作实现：分段表 + 按时间推进。
  * @owner   电控B
  *
- * 注意：段表里的脉宽值目前全部是 0（未标定），0 表示"该关节本段不发指令"，
- *       等机械B 标定后填入真实脉宽（500~2500）。
+ * 注意：段表里的脉宽值目前全部是 0（未标定），等机械B 标定后填入真实脉宽 500~2500。
+ *       未填之前不要按 A/B/C/D：0 会被夹到 500，关节会转到底。
  *       段时长取自《电控B-机械B 机构接口单》：A 900 / B 1200 / C 900 / D 600 ms。
  */
 
@@ -24,8 +24,8 @@ typedef struct
 /** 一个动作 = 若干段 */
 typedef struct
 {
-    const ArmSegment_t *segments;
-    uint8_t count;
+    const ArmSegment_t *segments;   /**< 段数组 */
+    uint8_t step_amount;            /**< 一共几段 */
 } ArmPlan_t;
 
 /** 关节 -> 舵机 ID 映射（按机械B 给的串联顺序） */
@@ -109,14 +109,14 @@ static const char *App_Arm_ActionName(ArmAction_t action)
         case ARM_ACT_PICK:  return "PICK";
         case ARM_ACT_PLACE: return "PLACE";
         case ARM_ACT_HOME:  return "HOME";
-        default:            return "NONE";
+        case ARM_ACT_NONE:  return "NONE";
     }
 }
 
 /**
  * @brief 取动作对应的分段表
  * @param action 动作
- * @return 分段表指针；未知动作返回 0
+ * @return 分段表指针；ARM_ACT_NONE 返回 0
  * @note   C 动作按当前高度档（App_Robot_GetLevel）选一层/二层/三层表
  */
 static const ArmPlan_t *App_Arm_GetPlan(ArmAction_t action)
@@ -147,7 +147,7 @@ static const ArmPlan_t *App_Arm_GetPlan(ArmAction_t action)
 
             return &plan_place_l1;
 
-        default:
+        case ARM_ACT_NONE:
             return 0;
     }
 }
@@ -156,7 +156,6 @@ static const ArmPlan_t *App_Arm_GetPlan(ArmAction_t action)
  * @brief 把一段参数发给 4 个舵机
  * @param segment 段参数
  * @return 无
- * @note   脉宽为 0 表示该关节本段未标定，跳过不发（否则会被夹到 500 乱动）
  * @note   4 条指令共约 5 ms 阻塞，只在换段时发一次
  */
 static void App_Arm_SendSegment(const ArmSegment_t *segment)
@@ -165,11 +164,6 @@ static void App_Arm_SendSegment(const ArmSegment_t *segment)
 
     for (joint = 0U; joint < (uint8_t)ARM_JOINT_NUM; joint++)
     {
-        if (segment->pulse[joint] == 0U)
-        {
-            continue;
-        }
-
         Servo_Move(s_servo_id[joint], segment->pulse[joint], segment->time_ms);
     }
 }
@@ -180,7 +174,7 @@ static void App_Arm_SendSegment(const ArmSegment_t *segment)
  * @return 无
  * @note   B 抓取完成 -> 置携块；C 放置完成 -> 置空载
  */
-static void App_Arm_Finish(void)
+static void App_Arm_Renew_Load_State(void)
 {
     if (s_action == ARM_ACT_PICK)
     {
@@ -232,9 +226,9 @@ void App_Arm_Update(void)
 
     s_step++;
 
-    if (s_step >= s_plan->count)
+    if (s_step >= s_plan->step_amount)
     {
-        App_Arm_Finish();
+        App_Arm_Renew_Load_State();
         return;
     }
 
@@ -242,7 +236,7 @@ void App_Arm_Update(void)
     App_Arm_SendSegment(&s_plan->segments[s_step]);
 }
 
-void App_Arm_Motion(ArmAction_t action)
+void App_Arm_Set_Action(ArmAction_t action)
 {
     uint8_t load;
     const ArmPlan_t *plan;

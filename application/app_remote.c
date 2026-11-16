@@ -182,22 +182,22 @@ static void App_Remote_HandleArmKeys(uint8_t pressed)
 {
     if ((pressed & RC_BTN_ARM_READY) != 0U)
     {
-        App_Arm_Motion(ARM_ACT_READY);
+        App_Arm_Set_Action(ARM_ACT_READY);
     }
 
     if ((pressed & RC_BTN_ARM_PICK) != 0U)
     {
-        App_Arm_Motion(ARM_ACT_PICK);
+        App_Arm_Set_Action(ARM_ACT_PICK);
     }
 
     if ((pressed & RC_BTN_ARM_PLACE) != 0U)
     {
-        App_Arm_Motion(ARM_ACT_PLACE);
+        App_Arm_Set_Action(ARM_ACT_PLACE);
     }
 
     if ((pressed & RC_BTN_ARM_HOME) != 0U)
     {
-        App_Arm_Motion(ARM_ACT_HOME);
+        App_Arm_Set_Action(ARM_ACT_HOME);
     }
 }
 
