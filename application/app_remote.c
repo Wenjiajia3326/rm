@@ -8,6 +8,7 @@
 #include "app_config.h"
 #include "app_robot.h"
 #include "remote_protocol.h"
+#include "app_arm.h"
 #include "main.h"          /* HAL_GetTick */
 
 /** 前后目标量（-100~100，+ 为前） */
@@ -181,22 +182,22 @@ static void App_Remote_HandleArmKeys(uint8_t pressed)
 {
     if ((pressed & RC_BTN_ARM_READY) != 0U)
     {
-        LOG("key A ready\r\n");         /* TODO: App_Arm_Request(ARM_ACT_READY) */
+        App_Arm_Motion(ARM_ACT_READY);
     }
 
     if ((pressed & RC_BTN_ARM_PICK) != 0U)
     {
-        LOG("key B pick\r\n");          /* TODO: App_Arm_Request(ARM_ACT_PICK) */
+        App_Arm_Motion(ARM_ACT_PICK);
     }
 
     if ((pressed & RC_BTN_ARM_PLACE) != 0U)
     {
-        LOG("key C place\r\n");         /* TODO: App_Arm_Request(ARM_ACT_PLACE) */
+        App_Arm_Motion(ARM_ACT_PLACE);
     }
 
     if ((pressed & RC_BTN_ARM_HOME) != 0U)
     {
-        LOG("key D home\r\n");          /* TODO: App_Arm_Request(ARM_ACT_HOME) */
+        App_Arm_Motion(ARM_ACT_HOME);
     }
 }
 
