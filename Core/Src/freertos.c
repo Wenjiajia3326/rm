@@ -27,6 +27,10 @@
 /* USER CODE BEGIN Includes */
 #include "app_chassis.h"
 #include "app_config.h"
+#include "app_robot.h"
+#include "app_remote.h"
+#include "app_vision.h"
+#include "bsp_uart.h"
 
 /* USER CODE END Includes */
 
@@ -134,6 +138,18 @@ void StartRobotTask(void *argument)
 
     (void)argument; // 任务暂时不用传入参数，明确告诉编译器。
 
+    // 先准备通信和整机状态，再初始化各应用模块。
+    BSP_Uart_Init();
+    BSP_Log_Init();
+    App_Robot_Init();
+    App_Remote_Init();
+    App_Vision_Init();
+
+    LOG("\r\n=== AB fw boot ===\r\n");
+    LOG("mode=%s period=%ums\r\n",
+        App_Robot_ModeName(App_Robot_GetMode()),
+        (unsigned int)CHASSIS_CONTROL_PERIOD_MS);
+
     // 仅启动一次，保存底盘是否准备成功。
     chassis_ready = App_Chassis_Start(); // 检查配置并初始化底盘，把启动结果保存下来。
 
@@ -145,6 +161,10 @@ void StartRobotTask(void *argument)
     {
         // 按计划节拍等待，实际采样间隔仍由毫秒计时计算。
         vTaskDelayUntil(&last_wake_tick, period_ticks); // 等到下个计划时刻；传地址让函数更新这个时间基准。
+
+        // 通信始终更新，不受底盘配置是否准备成功影响。
+        App_Remote_Update(); // 处理遥控帧、模式、按键和失联判断。
+        App_Vision_Update(); // 处理视觉路线、灯色和在线状态。
 
         current_ms = HAL_GetTick(); // 记录本轮实际开始处理的毫秒时刻。
         elapsed_ms = current_ms - previous_ms; // 本次减上次，得到实际间隔。

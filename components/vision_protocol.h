@@ -19,14 +19,14 @@
 /** 一帧视觉数据（按 type 取对应字段，未使用的字段为 0） */
 typedef struct
 {
-    uint8_t type;       /**< 0x10 选路 / 0x11 灯色 / 0x12 心跳 */
-    uint8_t route;      /**< 0x10：路线 1~3；0 = 没看见；其它帧为 0 */
-    uint8_t light;      /**< 0x11：1 红 / 2 绿 / 3 黄；0 = 没看见；其它帧为 0 */
-    uint8_t state;      /**< 0x12：bit0 = 1 表示视觉在线；其它帧为 0 */
-    uint8_t conf;       /**< 0x10/0x11：置信度 0~100 */
-    uint8_t ttl_50ms;   /**< 0x10/0x11：有效期，单位 50 ms */
-    uint8_t seq;        /**< 0x10/0x11：帧序号，0~255 回绕 */
-    uint8_t fps;        /**< 0x12：视觉自报帧率，0 表示暂不提供 */
+    uint8_t vision_type;       /**< 0x10 选路 / 0x11 灯色 / 0x12 心跳 */
+    uint8_t vision_route;      /**< 0x10：路线 1~3；0 = 没看见；其它帧为 0 */
+    uint8_t vision_light;      /**< 0x11：1 红 / 2 绿 / 3 黄；0 = 没看见；其它帧为 0 */
+    uint8_t vision_state;      /**< 0x12：bit0 = 1 表示视觉在线；其它帧为 0 */
+    uint8_t vision_conf;       /**< 0x10/0x11：置信度 0~100 */
+    uint8_t vision_ttl_50ms;   /**< 0x10/0x11：有效期，单位 50 ms */
+    uint8_t vision_seq;        /**< 0x10/0x11：帧序号，0~255 回绕 */
+    uint8_t vision_fps;        /**< 0x12：视觉自报帧率，0 表示暂不提供 */
 } VisionFrame_t;
 
 /**

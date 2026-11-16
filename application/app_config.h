@@ -13,11 +13,20 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
+#include "bsp_log.h"    /* app -> bsp：应用层用日志函数，bsp 层不反向依赖 */
+
 /* ===================== 〇、构建开关（比赛前按注释改） ===================== */
 #define APP_LOG_ENABLE          1       ///< 日志总开关：1=开(开发) / 0=关(比赛)
 #define APP_SELFTEST_ENABLE     1       ///< 上电自检：1=开(开发) / 0=关(比赛)
 #define APP_SERIAL_CMD_ENABLE   1       ///< 串口调试命令：1=开(开发) / 0=关(比赛)
 /* 比赛固件：三个都改成 0 */
+
+/* ---- 日志宏：APP_LOG_ENABLE=0 时整段调用在编译期消失 ---- */
+#if (APP_LOG_ENABLE != 0)
+#define LOG(...)                BSP_Log_PrintFormat(__VA_ARGS__)
+#else
+#define LOG(...)                ((void)0)
+#endif
 
 /* ===================== 一、通用帧结构（owner：电控B） ===================== */
 #define APP_FRAME_HEAD0                 0xAAU   ///< 帧头第 1 字节
@@ -51,12 +60,14 @@
 #define VISION_MSG_TTL_MS               200U    ///< 消息有效期（ms）
 #define VISION_HB_TIMEOUT_MS            3000U   ///< 心跳超时（ms）
 #define VISION_ERROR_FRAME_MAX          10U     ///< 连续错误帧上限，超过判链路异常
-#define VISION_BOOT_GRACE_MS            5000U   ///< 上电宽限：这段时间内不报 vision_ok=0
 
 /* ===================== 三、遥控参数（owner：电控B） ===================== */
 #define RC_FRAME_RATE_HZ                30U     ///< 手柄发送频率（协议 V1.3 约定）
 #define RC_JOY_DEADZONE                 8       ///< 摇杆死区（百分比，±8）
 #define RC_AXIS_MAX                     100     ///< 摇杆输出上限（百分比满速）
+#define RC_SNAP_RANGE_PCT               15      ///< 修正档吸附范围（%）：偏小的轴 <=15 才吸附到主轴
+#define RC_ROT_FAST_PCT                 100     ///< 快速旋转输出（百分比）
+#define RC_ROT_SLOW_PCT                 40      ///< 精细旋转输出（百分比，数值待定）
 #define RC_RX_WARN_MS                   150U    ///< 丢帧告警阈值（ms）
 #define RC_RX_LOST_MS                   300U    ///< 判定链路丢失（ms）
 #define RC_SEQ_MISS_WARN                5U      ///< 单次 seq 跳变超过该值即记一次链路抖动

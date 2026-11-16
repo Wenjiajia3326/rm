@@ -131,7 +131,7 @@ uint8_t Vision_GetFrame(VisionFrame_t *out)
     uint8_t type;
     uint8_t frame_length;
 
-    while (BSP_Uart_GetLength(BSP_UART_VISION) >= VISION_HEADER_SIZE)
+    while (BSP_Uart_GetAvailableDataSize(BSP_UART_VISION) >= VISION_HEADER_SIZE)
     {
         VisionFrame_t frame = {0};
 
@@ -169,7 +169,7 @@ uint8_t Vision_GetFrame(VisionFrame_t *out)
         }
 
         /* 还没收满：等下一次 */
-        if (BSP_Uart_GetLength(BSP_UART_VISION) < frame_length)
+        if (BSP_Uart_GetAvailableDataSize(BSP_UART_VISION) < frame_length)
         {
             return 0U;
         }
@@ -182,26 +182,26 @@ uint8_t Vision_GetFrame(VisionFrame_t *out)
         }
 
         /* 有效帧：按类型填字段 */
-        frame.type = type;
+        frame.vision_type = type;
 
         if (type == APP_FRAME_TYPE_VISION_HB)
         {
-            frame.state = Vision_ReadByte(VISION_OFFSET_DATA + VISION_HB_DATA_STATE);
-            frame.fps = Vision_ReadByte(VISION_OFFSET_DATA + VISION_HB_DATA_FPS);
+            frame.vision_state = Vision_ReadByte(VISION_OFFSET_DATA + VISION_HB_DATA_STATE);
+            frame.vision_fps = Vision_ReadByte(VISION_OFFSET_DATA + VISION_HB_DATA_FPS);
         }
         else
         {
-            frame.conf = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_CONF);
-            frame.ttl_50ms = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_TTL);
-            frame.seq = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_SEQ);
+            frame.vision_conf = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_CONF);
+            frame.vision_ttl_50ms = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_TTL);
+            frame.vision_seq = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_SEQ);
 
             if (type == APP_FRAME_TYPE_VISION_ROUTE)
             {
-                frame.route = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_VALUE);
+                frame.vision_route = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_VALUE);
             }
             else
             {
-                frame.light = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_VALUE);
+                frame.vision_light = Vision_ReadByte(VISION_OFFSET_DATA + VISION_DATA_VALUE);
             }
         }
 
@@ -215,7 +215,7 @@ uint8_t Vision_GetFrame(VisionFrame_t *out)
         }
 
         /* 业务帧：重复 seq 丢弃后继续找下一帧 */
-        if (Vision_SeqJudge(frame.seq) == 0U)
+        if (Vision_SeqJudge(frame.vision_seq) == 0U)
         {
             continue;
         }
