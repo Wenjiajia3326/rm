@@ -162,4 +162,9 @@
 #define CHASSIS_SPEED_OUTPUT_MIN     (-1000.0f)
 #define CHASSIS_SPEED_OUTPUT_MAX     1000.0f
 
+// 循迹参数，0表示尚未标定，暂不作为可运行参数。
+#define CHASSIS_LINE_FORWARD_MPS   0.0f  // 循迹前进速度，单位m/s。
+#define CHASSIS_LINE_KP            0.0f  // 转向比例系数，单位(rad/s)/mm。
+#define CHASSIS_LINE_MAX_TURN_RPS  0.0f  // 转向角速度绝对值上限，单位rad/s。
+
 #endif /* APP_CONFIG_H */

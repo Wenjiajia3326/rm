@@ -6,6 +6,7 @@
 #include "pid.h"
 #include "app_config.h"
 #include <math.h>
+#include "line.h"
 
 /// @brief 底盘内部的自动任务类型。
 typedef enum
@@ -665,6 +666,33 @@ uint8_t App_Chassis_Start(void)
 
     return 1;
 }
+// 普通循迹时更新速度目标。
+// 调用前由任务逻辑排除停线、路口等特殊图案。
+// 返回1表示成功生成目标；返回0表示本次不能循迹。
+static uint8_t App_Chassis_Update_Line(const LineInput *input)
+{
+    float offset_mm;  // 本次检测到的线路偏移，左正右负。
+
+    // 先清除旧目标，避免本次计算失败后继续沿用旧命令。
+    chassis_target.vx = 0.0f;
+    chassis_target.vy = 0.0f;
+    chassis_target.wz = 0.0f;
+
+    if (Line_Calc_Offset(input, &offset_mm) == 0)
+    {
+        return 0;
+    }
+
+    // 一边前进，一边根据线路偏移转向。
+    chassis_target.vx = CHASSIS_LINE_FORWARD_MPS;
+    chassis_target.wz = Line_Calc_Turn(
+        offset_mm,
+        CHASSIS_LINE_KP,
+        CHASSIS_LINE_MAX_TURN_RPS);
+
+    return 1;
+}
+
 uint8_t App_Chassis_Run(const ChassisMotorMap *map,
                        uint8_t enabled,
                        float dt_s)
