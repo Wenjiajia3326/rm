@@ -3,7 +3,9 @@
 
 uint8_t Line_Calc_Offset(const LineInput *input, float *offset)
 {
-    // 五个探头的横向位置，按车体从左到右排列，单位mm。
+    // 依据当前传感器尺寸资料，尚未实物核对。
+    // 中心到内侧15mm，内侧到外侧28mm；左正右负，单位mm。
+    // 仅用于横向位置的粗略估计；修改尺寸时同步更新line.h中的范围说明。
     static const float position_mm[LINE_SENSOR_COUNT] =
     {
         43.0f, 15.0f, 0.0f, -15.0f, -43.0f

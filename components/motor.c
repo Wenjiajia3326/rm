@@ -66,7 +66,7 @@ uint8_t Motor_Calc_Delta(uint16_t current,// 当前计数，必须小于count_ra
     *delta_count = difference;
     return 1;
 }
-uint8_t Motor_Update(MotorData *motor,
+MotorSampleResult Motor_Update(MotorData *motor,
                      uint16_t current,
                      uint32_t count_range,
                      uint32_t counts_per_rev,
@@ -77,7 +77,7 @@ uint8_t Motor_Update(MotorData *motor,
 
     if (motor == NULL)
     {
-        return 0;
+        return MOTOR_SAMPLE_ERROR;
     }
 
     // 本次采样无效，取消旧起点，避免下次使用跨多个周期的计数差。
@@ -87,7 +87,7 @@ uint8_t Motor_Update(MotorData *motor,
         counts_per_rev == 0 || dt_s <= 0.0f)
     {
         motor->initialized = 0;
-        return 0;
+        return MOTOR_SAMPLE_ERROR;
     }
 
     // 首次只有一个读数，先建立起点，不生成轮速。
@@ -95,7 +95,7 @@ uint8_t Motor_Update(MotorData *motor,
     {
         motor->previous_count = current;
         motor->initialized = 1;
-        return 0;
+        return MOTOR_SAMPLE_READY;
     }
 
     // 先算计数差；只有成功时才换算轮速，任一步失败都重新建立起点。
@@ -109,9 +109,9 @@ uint8_t Motor_Update(MotorData *motor,
                         speed) == 0)
     {
         motor->initialized = 0;
-        return 0;
+        return MOTOR_SAMPLE_ERROR;
     }
 
     motor->previous_count = current;
-    return 1;
+    return MOTOR_SAMPLE_VALID;
 }

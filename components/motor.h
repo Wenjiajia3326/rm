@@ -4,6 +4,14 @@
 
 #include <stdint.h>
 
+// 单次测速结果：不能当作布尔值使用，须与枚举值明确比较。
+typedef enum
+{
+    MOTOR_SAMPLE_ERROR = 0,  ///< 参数或计数异常，本次没有有效速度。
+    MOTOR_SAMPLE_READY,      ///< 正常建立计数起点，等待下一次采样。
+    MOTOR_SAMPLE_VALID       ///< 本次速度换算成功。
+} MotorSampleResult;
+
 // 保存单个电机测速时需要记住的数据。
 typedef struct
 {
@@ -43,11 +51,12 @@ uint8_t Motor_Calc_Delta(uint16_t current,// 当前计数，必须小于count_ra
 /// @param counts_per_rev 轮子转一圈对应的计数，必须大于0。
 /// @param dt_s 当前与上一次采样的间隔，单位秒，必须大于0。
 /// @param speed 接收轮速，单位rad/s，不能是空指针。
-/// @return 得到有效轮速返回1；首次建立起点或失败返回0，不修改speed。
+/// @return VALID表示速度有效；READY表示仅建立起点；ERROR表示异常。
+///         仅VALID修改speed；调用者须明确比较枚举值，不能当作成功数量累加。
 /// @note 浮点输入须为有限值；实际计数变化须小于计数范围的一半。
 /// @note 固定采样使用；漏采样或采样失败后须清零initialized，重新建立起点。
 /// @note 同一记录只由一个执行上下文更新；更改计数配置前须重新建立起点。
-uint8_t Motor_Update(MotorData *motor,
+MotorSampleResult Motor_Update(MotorData *motor,
                      uint16_t current,
                      uint32_t count_range,
                      uint32_t counts_per_rev,

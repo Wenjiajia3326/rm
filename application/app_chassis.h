@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include "mecanum.h"
+#include "motor.h"
 #include "bsp_motor.h"
 
 
@@ -108,14 +109,15 @@ uint8_t App_Chassis_Update_Wheel(const MecanumConfig *config,
 /// @param count_range 四轮共同的计数范围，即ARR加1，支持2～65536。
 /// @param counts_per_rev 四轮共同的每轮一圈最终计数，已计入必要的倍频与减速比。
 /// @param dt_s 两次采样间隔，单位s，必须大于0且有限。
-/// @return 四轮反馈全部有效返回1；首次采样或任一失败返回0。
+/// @return 四轮均有效返回VALID；正常建立起点返回READY；任一异常返回ERROR。
+///         必须明确比较枚举值，不能用非零判断反馈是否有效。
 /// @note 先调用App_Chassis_Init；本接口仅用于四轮计数配置相同的情况。
 ///       失败时有效标志置0，保留旧轮速，旧值不可当成本次反馈使用。
 ///       固定周期顺序调用；漏采样时以NULL通知本函数，重新建立起点。
 ///       更改计数配置前须重新初始化；每次真实计数变化须小于计数范围的一半。
 ///       轮速符号沿用计数方向，接入PI前须统一为推动整车前进时为正。
 ///       仅由同一主循环顺序调用；不操作硬件，也不自动检测反馈超时。
-uint8_t App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
+MotorSampleResult App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
                                    uint32_t count_range,
                                    uint32_t counts_per_rev,
                                    float dt_s);
@@ -164,7 +166,8 @@ void App_Chassis_Stop(ChassisOutput *output);
 /// @param output 接收四轮驱动请求，不能为NULL。
 /// @return 完成控制计算返回1；禁止运行或任一步失败返回0。
 /// @note 先初始化底盘和PI；所有输入数值必须有限。
-///       停止后须重新设置目标；首次采样只建立计数起点，返回0。
+///       停止或采样异常后须重新设置目标。
+///       正常首次采样返回0并给出零输出，但保留目标，等待下一次测速。
 ///       固定周期在同一主循环顺序调用，停止期间也须调用。
 ///       更改计数配置前须重新初始化。
 ///       调用者每次都须执行返回的驱动请求，包括失败时的零请求。

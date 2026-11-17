@@ -36,22 +36,23 @@ static ChassisSpeed chassis_ramp = {0};
 // 保存解算并限速后的四轮目标，供后续四轮速度PI使用。
 static WheelSpeed wheel_target = {0};
 
-// 四轮分别保存自己的上次计数，不能共用测速记录。
-static MotorData motor_front_left = {0};
-static MotorData motor_front_right = {0};
-static MotorData motor_rear_left = {0};
-static MotorData motor_rear_right = {0};
+// 内部轮序固定为左前、右前、左后、右后，不等同于电路板接口编号。
+typedef enum
+{
+    WHEEL_FRONT_LEFT = 0,
+    WHEEL_FRONT_RIGHT,
+    WHEEL_REAR_LEFT,
+    WHEEL_REAR_RIGHT,
+    WHEEL_COUNT
+} WheelId;
 
-// 保存四轮实际角速度，单位rad/s，正方向与四轮目标一致。
+// 每个轮子独立保存测速历史和PI积分。
+static MotorData motor[WHEEL_COUNT] = {0};
+static PidData pid[WHEEL_COUNT] = {0};
+
+// 保存完整四轮反馈；有效反馈只允许使用一次。
 static WheelSpeed wheel_feedback = {0};
-
-// 1表示有一份尚未用于PI计算的有效四轮反馈；0表示不可用于计算。
 static uint8_t wheel_feedback_valid = 0;
-// 四轮参数可以相同，但各自的积分必须独立保存。
-static PidData pid_front_left = {0};
-static PidData pid_front_right = {0};
-static PidData pid_rear_left = {0};
-static PidData pid_rear_right = {0};
 
 // 四轮PI全部配置成功后才置1；后续控制计算须先检查此标志。
 static uint8_t chassis_pi_ready = 0;
@@ -85,6 +86,8 @@ ChassisStatus App_Chassis_GetStatus(void)
 }
 void App_Chassis_Init(void)
 {
+    uint8_t wheel_index;
+
     // 软件状态被重新初始化后，须重新完成启动流程。
     chassis_status = CHASSIS_STATUS_NOT_READY;
 
@@ -106,10 +109,10 @@ void App_Chassis_Init(void)
     wheel_target.rear_left = 0.0f;
     wheel_target.rear_right = 0.0f;
     // 重新初始化后，四轮都需要重新建立计数起点。
-    motor_front_left.initialized = 0;
-    motor_front_right.initialized = 0;
-    motor_rear_left.initialized = 0;
-    motor_rear_right.initialized = 0;
+    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
+    {
+        motor[wheel_index].initialized = 0;
+    }
 
     wheel_feedback.front_left = 0.0f;
     wheel_feedback.front_right = 0.0f;
@@ -119,10 +122,10 @@ void App_Chassis_Init(void)
     wheel_feedback_valid = 0;
     // 底盘重新初始化后，清除旧积分，并要求重新配置四轮PI。
     chassis_pi_ready = 0;
-    Pid_Reset(&pid_front_left);
-    Pid_Reset(&pid_front_right);
-    Pid_Reset(&pid_rear_left);
-    Pid_Reset(&pid_rear_right);
+    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
+    {
+        Pid_Reset(&pid[wheel_index]);
+    }
 }
 
 uint8_t App_Chassis_SetTarget(const ChassisSpeed *target)
@@ -233,61 +236,69 @@ uint8_t App_Chassis_Update_Wheel(const MecanumConfig *config,
     return 1;
 }
 
-uint8_t App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
+MotorSampleResult App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
                                    uint32_t count_range,
                                    uint32_t counts_per_rev,
                                    float dt_s)
 {
-    // 临时保存本次轮速；只有四轮全部算好，才读取并复制整份结果。
-    WheelSpeed next_feedback;
-    // 普通局部变量，每次调用都从0开始，统计本次成功的轮子数量。
-    uint8_t valid_count = 0;
+    uint8_t wheel_index;
+    uint8_t error_count = 0U;
+    uint8_t ready_count = 0U;
+    float next_speed[WHEEL_COUNT];
+    uint16_t current[WHEEL_COUNT];
+    MotorSampleResult result;
 
-    // 取消本次反馈的有效资格，不清空旧轮速；旧值不能当成本次测量使用。
+    // 旧轮速不可作为本次反馈使用。
     wheel_feedback_valid = 0;
 
-    // 没有读数时取消旧起点，避免恢复后用单周期时间除跨周期计数差。
     if (encoder == NULL)
     {
-        motor_front_left.initialized = 0;
-        motor_front_right.initialized = 0;
-        motor_rear_left.initialized = 0;
-        motor_rear_right.initialized = 0;
-        return 0;
+        for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
+        {
+            motor[wheel_index].initialized = 0;
+        }
+        return MOTOR_SAMPLE_ERROR;
     }
 
-    // Motor_Update把速度写入最后一个参数指向的位置，返回值仅表示成功1或失败0。
-    // +=累加的是成功标志，不是轮速；四条调用分别执行，前轮失败也不跳过后轮。
-    valid_count += Motor_Update(
-        &motor_front_left, encoder->front_left,
-        count_range, counts_per_rev, dt_s,
-        &next_feedback.front_left);
+    // 明确轮位映射，不把结构体强转成数组。
+    current[WHEEL_FRONT_LEFT] = encoder->front_left;
+    current[WHEEL_FRONT_RIGHT] = encoder->front_right;
+    current[WHEEL_REAR_LEFT] = encoder->rear_left;
+    current[WHEEL_REAR_RIGHT] = encoder->rear_right;
 
-    valid_count += Motor_Update(
-        &motor_front_right, encoder->front_right,
-        count_range, counts_per_rev, dt_s,
-        &next_feedback.front_right);
-
-    valid_count += Motor_Update(
-        &motor_rear_left, encoder->rear_left,
-        count_range, counts_per_rev, dt_s,
-        &next_feedback.rear_left);
-
-    valid_count += Motor_Update(
-        &motor_rear_right, encoder->rear_right,
-        count_range, counts_per_rev, dt_s,
-        &next_feedback.rear_right);
-
-    // 首次采样只建立起点，也返回0；未成功的临时字段不能读取。
-    if (valid_count != 4)
+    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
     {
-        return 0;
+        // 一路异常也继续更新其他轮，分别统计异常和正常准备。
+        result = Motor_Update(&motor[wheel_index], current[wheel_index],
+                              count_range, counts_per_rev, dt_s,
+                              &next_speed[wheel_index]);
+        if (result == MOTOR_SAMPLE_ERROR)
+        {
+            error_count++;
+        }
+        else if (result == MOTOR_SAMPLE_READY)
+        {
+            ready_count++;
+        }
     }
 
-    // 结构体赋值复制四个轮速；保存完成后，再标记本次反馈有效。
-    wheel_feedback = next_feedback;
+    // 异常优先，不能把某轮异常当作其他轮的正常准备。
+    if (error_count != 0U)
+    {
+        return MOTOR_SAMPLE_ERROR;
+    }
+    if (ready_count != 0U)
+    {
+        return MOTOR_SAMPLE_READY;
+    }
+
+    // 只有四轮均有效，才读取临时轮速并提交完整反馈。
+    wheel_feedback.front_left = next_speed[WHEEL_FRONT_LEFT];
+    wheel_feedback.front_right = next_speed[WHEEL_FRONT_RIGHT];
+    wheel_feedback.rear_left = next_speed[WHEEL_REAR_LEFT];
+    wheel_feedback.rear_right = next_speed[WHEEL_REAR_RIGHT];
     wheel_feedback_valid = 1;
-    return 1;
+    return MOTOR_SAMPLE_VALID;
 }
 
 uint8_t App_Chassis_Init_PI(float kp,
@@ -296,29 +307,17 @@ uint8_t App_Chassis_Init_PI(float kp,
                            float output_min,
                            float output_max)
 {
-    uint8_t valid_count = 0;
+    uint8_t valid_count = 0U;
+    uint8_t wheel_index;
 
-    // 即使之前配置成功，本次也要四轮全部通过后才能重新允许计算。
+    // 每轮参数可以相同，但积分记录独立。全部成功才允许计算。
     chassis_pi_ready = 0;
-
-    // 返回值是成功1或失败0；同一组参数分别写入四份独立的PI数据。
-    valid_count += Pid_Init(
-        &pid_front_left, kp, ki, integral_max,
-        output_min, output_max);
-
-    valid_count += Pid_Init(
-        &pid_front_right, kp, ki, integral_max,
-        output_min, output_max);
-
-    valid_count += Pid_Init(
-        &pid_rear_left, kp, ki, integral_max,
-        output_min, output_max);
-
-    valid_count += Pid_Init(
-        &pid_rear_right, kp, ki, integral_max,
-        output_min, output_max);
-
-    if (valid_count != 4)
+    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
+    {
+        valid_count += Pid_Init(&pid[wheel_index], kp, ki, integral_max,
+                                output_min, output_max);
+    }
+    if (valid_count != WHEEL_COUNT)
     {
         return 0;
     }
@@ -329,6 +328,8 @@ uint8_t App_Chassis_Init_PI(float kp,
 uint8_t App_Chassis_Calc_Output(float dt_s,
                                ChassisOutput *output)
 {
+    uint8_t wheel_index;
+
     if (output == NULL)
     {
         return 0;
@@ -343,10 +344,10 @@ uint8_t App_Chassis_Calc_Output(float dt_s,
     {
         // 本次计算条件无效，取消旧反馈资格，恢复后必须重新采样。
         wheel_feedback_valid = 0;
-        Pid_Reset(&pid_front_left);
-        Pid_Reset(&pid_front_right);
-        Pid_Reset(&pid_rear_left);
-        Pid_Reset(&pid_rear_right);
+        for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
+        {
+            Pid_Reset(&pid[wheel_index]);
+        }
         return 0;
     }
 
@@ -355,25 +356,25 @@ uint8_t App_Chassis_Calc_Output(float dt_s,
 
     // 每个轮子使用自己的PI、目标和反馈，积分互不影响。
     output->front_left = Pid_Calc(
-        &pid_front_left,
+        &pid[WHEEL_FRONT_LEFT],
         wheel_target.front_left,
         wheel_feedback.front_left,
         dt_s);
 
     output->front_right = Pid_Calc(
-        &pid_front_right,
+        &pid[WHEEL_FRONT_RIGHT],
         wheel_target.front_right,
         wheel_feedback.front_right,
         dt_s);
 
     output->rear_left = Pid_Calc(
-        &pid_rear_left,
+        &pid[WHEEL_REAR_LEFT],
         wheel_target.rear_left,
         wheel_feedback.rear_left,
         dt_s);
 
     output->rear_right = Pid_Calc(
-        &pid_rear_right,
+        &pid[WHEEL_REAR_RIGHT],
         wheel_target.rear_right,
         wheel_feedback.rear_right,
         dt_s);
@@ -383,16 +384,18 @@ uint8_t App_Chassis_Calc_Output(float dt_s,
 
 void App_Chassis_Stop(ChassisOutput *output)
 {
+    uint8_t wheel_index;
+
     // 清除旧命令，避免下一周期继续追踪停止前的目标。
     chassis_target = (ChassisSpeed){0};
     chassis_ramp = (ChassisSpeed){0};
     wheel_target = (WheelSpeed){0};
 
     // 清除历史积分，保留已配置的PI参数和就绪状态。
-    Pid_Reset(&pid_front_left);
-    Pid_Reset(&pid_front_right);
-    Pid_Reset(&pid_rear_left);
-    Pid_Reset(&pid_rear_right);
+    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
+    {
+        Pid_Reset(&pid[wheel_index]);
+    }
 
     // 停止前的反馈不可再用于计算；编码器仍应继续周期采样。
     wheel_feedback_valid = 0;
@@ -410,7 +413,8 @@ uint8_t App_Chassis_Update(const ChassisConfig *config,
                            float dt_s,
                            ChassisOutput *output)
 {
-    uint8_t feedback_valid;
+    MotorSampleResult feedback_result;
+    uint8_t wheel_index;
 
     if (config == NULL)
     {
@@ -421,7 +425,7 @@ uint8_t App_Chassis_Update(const ChassisConfig *config,
     }
 
     // 先测速，即使禁止运行，也保持编码器采样连续。
-    feedback_valid = App_Chassis_Update_Feedback(
+    feedback_result = App_Chassis_Update_Feedback(
         encoder,
         config->count_range,
         config->counts_per_rev,
@@ -429,9 +433,23 @@ uint8_t App_Chassis_Update(const ChassisConfig *config,
 
     if (output == NULL ||
         enabled == 0 ||
-        feedback_valid == 0)
+        feedback_result == MOTOR_SAMPLE_ERROR)
     {
         App_Chassis_Stop(output);
+        return 0;
+    }
+
+    if (feedback_result == MOTOR_SAMPLE_READY)
+    {
+        // 正常准备测速：不输出驱动力，但保留已接受的整车目标。
+        // 平滑目标从零重新起步，避免恢复时沿用旧斜坡状态。
+        chassis_ramp = (ChassisSpeed){0};
+        wheel_target = (WheelSpeed){0};
+        for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
+        {
+            Pid_Reset(&pid[wheel_index]);
+        }
+        *output = (ChassisOutput){0};
         return 0;
     }
 
@@ -550,12 +568,8 @@ uint8_t App_Chassis_Control(const ChassisConfig *config,
              motor_index < BSP_MOTOR_COUNT;
              motor_index++)
         {
-            if (BSP_Motor_Set_Output(
-                    (BSPMotorId)motor_index, 0) == 0)
-            {
-                // 归零未成功，仍继续处理其他接口。
-                control_valid = 0;
-            }
+            // 无论本路是否成功，都继续尝试其他接口；本分支最终返回0。
+            (void)BSP_Motor_Set_Output((BSPMotorId)motor_index, 0);
         }
 
         return 0;
@@ -586,7 +600,8 @@ uint8_t App_Chassis_Init_Hardware(void)
 
     return output_ready && encoder_ready;
 }
-// 启动前检查应用参数；编码器计数范围稍后从BSP获取。
+// 启动前集中检查固定配置，周期控制不重复检查这些固定数值。
+// 编码器计数范围稍后从BSP获取；循迹参数留到自动任务入口检查。
 static uint8_t App_Chassis_Check_Config(void)
 {
     // 几何尺寸必须为有限正数，单位为米。
@@ -616,7 +631,7 @@ static uint8_t App_Chassis_Check_Config(void)
         return 0;
     }
 
-    // PI的大小关系由Pid_Init检查；这里补充有限值和驱动输出范围检查。
+    // 增益允许为0；PI的大小关系由Pid_Init检查，此处只补充有限值及驱动范围。
     if (!isfinite(CHASSIS_SPEED_KP) ||
         !isfinite(CHASSIS_SPEED_KI) ||
         !isfinite(CHASSIS_SPEED_INTEGRAL_MAX) ||
@@ -697,6 +712,8 @@ uint8_t App_Chassis_Run(const ChassisMotorMap *map,
                        uint8_t enabled,
                        float dt_s)
 {
+    uint8_t motion_allowed = enabled;  // B的许可只能被任务逻辑进一步收紧。
+
     // 根据当前任务，决定本周期是否允许执行运动控制。
     switch (chassis_task)
     {
@@ -710,19 +727,19 @@ uint8_t App_Chassis_Run(const ChassisMotorMap *map,
         case CHASSIS_TASK_LINE1:
         {
             // 第一段循迹尚未接入纠偏计算，暂时保持零输出。
-            enabled = 0U;
+            motion_allowed = 0U;
             break;
         }
 
         default:
         {
             // 其他自动任务尚未实现，暂时保持零输出。
-            enabled = 0U;
+            motion_allowed = 0U;
             break;
         }
     }
 
     // 无论是否允许运动，都继续执行采样和相应的输出处理。
     return App_Chassis_Control(
-        &chassis_config, map, enabled, dt_s);
+        &chassis_config, map, motion_allowed, dt_s);
 }
