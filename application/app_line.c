@@ -25,7 +25,7 @@ typedef enum
     LINE_OBSERVE,     // 已确认外侧特征，继续观察。
     LINE_TURN,        // 已确认需要转弯，正在执行。
     LINE_RECOVER,     // 普通循迹丢线，有限时找线。
-    LINE_ERROR        // 本次恢复失败，等待任务复位。
+    LINE_ERROR        // 本次循迹处理失败，等待任务复位。
 } LineState;
 
 // 最后一次有效偏差所指向的方向，不代表路口的选路指令。
@@ -45,6 +45,9 @@ static LineState line_state = LINE_FOLLOW;
 // 已进入观察阶段的时间，单位为秒，每个周期累加实际间隔。
 static float line_observe_time = 0.0f;
 
+// 正常循迹持续无法辨清线路的时间，全白由独立找线流程处理。
+static float line_unclear_time = 0.0f;
+
 // 观察阶段中间三路连续无黑的次数；与五路全白计数分开。
 static uint8_t line_observe_lost_count = 0U;
 
@@ -62,7 +65,7 @@ static uint8_t line_turn_found_count = 0U;
 
 // 直角初版的过程标记：本次转弯中，中间三路是否曾全部无黑。
 // 不代表所有弯道都必须出现全白，也不能单凭它判断选路正确。
-static uint8_t line_turn_left_old = 0U;
+static uint8_t line_turn_lost_middle = 0U;
 
 // 找线计时与连续找回次数，和转弯的计数互不混用。
 static float line_recover_time = 0.0f;
@@ -79,13 +82,14 @@ void App_Line_Reset(void)
     line_recover_time = 0.0f;
     line_recover_found_count = 0U;
     line_observe_time = 0.0f;
+    line_unclear_time = 0.0f;
     line_observe_lost_count = 0U;
     line_observe_clear_count = 0U;
     line_last_direction = LINE_DIR_NONE;
     line_turn_direction = LINE_DIR_NONE;
     line_turn_time = 0.0f;
     line_turn_found_count = 0U;
-    line_turn_left_old = 0U;
+    line_turn_lost_middle = 0U;
 }
 
 // 将五路原始电平整理成循迹算法使用的黑白结果。
@@ -210,7 +214,7 @@ static uint8_t App_Line_Begin_Turn(LineDirection direction)
     // 每次开始新的转弯，都重新计时、重新确认新线。
     line_turn_time = 0.0f;
     line_turn_found_count = 0U;
-    line_turn_left_old = 0U;
+    line_turn_lost_middle = 0U;
 
     line_state = LINE_TURN;
     return 1U;
@@ -236,6 +240,15 @@ static LineResult App_Line_Observe(const LineInput *input,
     LineDirection direction = LINE_DIR_NONE;  // 本周期允许开始的转向。
 
     line_observe_time += dt_s;
+
+    // 尚未设置时限，或观察超过时限，都结束本次处理。
+    // Update已将目标清零；失败保持到任务显式调用Reset。
+    if (CHASSIS_LINE_OBSERVE_TIMEOUT_S <= 0.0f ||
+        line_observe_time >= CHASSIS_LINE_OBSERVE_TIMEOUT_S)
+    {
+        line_state = LINE_ERROR;
+        return LINE_FAILED;
+    }
 
     // 中间三路连续无黑才确认已离开中间线；任一路恢复黑色就重新计数。
     if (pattern->middle_count != 0U)
@@ -299,7 +312,7 @@ static LineResult App_Line_Observe(const LineInput *input,
     {
         App_Line_Begin_Turn(direction);
         // 入口已经确认中间无黑，交给转弯阶段继续记住，避免遗漏这段过程。
-        line_turn_left_old = 1U;
+        line_turn_lost_middle = 1U;
         // 本周期只切换阶段，下一周期由App_Line_Turn生成旋转请求。
         return LINE_NO_TARGET;
     }
@@ -365,11 +378,11 @@ static LineResult App_Line_Turn(const LineInput *input,
     // 中间三路无黑，记住已离开原来的中间线，不要求外侧也全白。
     if (pattern->middle_count == 0U)
     {
-        line_turn_left_old = 1U;
+        line_turn_lost_middle = 1U;
     }
 
     // 使用现有的black[2]读取正中探头，不增加虚构的图案字段。
-    if (line_turn_left_old != 0U &&
+    if (line_turn_lost_middle != 0U &&
         App_Line_Is_Clear(pattern) != 0U &&
         input->black[2] != 0U)
     {
@@ -482,7 +495,7 @@ LineResult App_Line_Update(ChassisSpeed *target,
     // 每周期先给出零请求，防止失败后沿用旧目标。
     *target = (ChassisSpeed){0};
 
-    // 恢复失败后不因下一次采样自动重新启动。
+    // 循迹处理失败后不因下一次采样自动重新启动。
     if (line_state == LINE_ERROR)
     {
         return LINE_FAILED;
@@ -534,6 +547,7 @@ LineResult App_Line_Update(ChassisSpeed *target,
     {
         line_state = LINE_OBSERVE;
         line_observe_time = 0.0f;  // 刚进入观察，从零开始计时。
+        line_unclear_time = 0.0f;
         line_observe_lost_count = 0U;
         line_observe_clear_count = 0U;
         observe_entered = 1U;
@@ -547,39 +561,50 @@ LineResult App_Line_Update(ChassisSpeed *target,
             // OBSERVE和TURN有各自的图案处理，不在这里抢占。
             if (line_white_count >= CHASSIS_LINE_CONFIRM_COUNT)
             {
+                line_unclear_time = 0.0f;
                 line_state = LINE_RECOVER;
                 line_recover_time = 0.0f;
                 line_recover_found_count = 0U;
                 return App_Line_Recover(&input, &pattern, target, 0.0f);
             }
 
-            // 缓弯允许外侧同时触发，中间仍须有一段可计算的线。
-            // 全黑、中间101或只有外侧黑时，保持零请求。
+            uint8_t clear;  // 本周期是否有可用于计算偏差的线路。
+
+            // 全白先等待连续确认，之后由上面的RECOVER入口处理。
+            if (pattern.black_count == 0U)
+            {
+                line_unclear_time = 0.0f;
+                return LINE_NO_TARGET;
+            }
+
             if (action == LINE_ACTION_FOLLOW)
             {
-                if (pattern.middle_count > 0U &&
-                    pattern.middle_count < 3U &&
-                    !(input.black[1] != 0U && input.black[2] == 0U &&
-                      input.black[3] != 0U) &&
-                    App_Line_Calc_Target(&input, target) != 0U)
-                {
-                    return LINE_TARGET_READY;
-                }
-                return LINE_NO_TARGET;
+                // 缓弯允许外侧同时触发；中间须有1或2个连续黑色。
+                clear = (pattern.middle_count > 0U &&
+                         pattern.middle_count < 3U &&
+                         !(input.black[1] != 0U && input.black[2] == 0U &&
+                           input.black[3] != 0U));
             }
-
-            // 普通循迹只处理清晰的中间线。
-            if (App_Line_Is_Clear(&pattern) == 0U)
+            else
             {
-                return LINE_NO_TARGET;
+                clear = App_Line_Is_Clear(&pattern);
             }
 
-            if (App_Line_Calc_Target(&input, target) == 0U)
+            if (clear != 0U && App_Line_Calc_Target(&input, target) != 0U)
             {
-                return LINE_NO_TARGET;
+                line_unclear_time = 0.0f;
+                return LINE_TARGET_READY;
             }
 
-            return LINE_TARGET_READY;
+            // 模糊图案之间切换也算持续不清楚，不反复重置等待时间。
+            line_unclear_time += dt_s;
+            if (CHASSIS_LINE_UNCLEAR_TIMEOUT_S <= 0.0f ||
+                line_unclear_time >= CHASSIS_LINE_UNCLEAR_TIMEOUT_S)
+            {
+                line_state = LINE_ERROR;
+                return LINE_FAILED;
+            }
+            return LINE_NO_TARGET;
         }
 
         case LINE_OBSERVE:

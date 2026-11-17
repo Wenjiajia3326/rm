@@ -83,7 +83,7 @@ uint8_t App_Chassis_SetTarget(const ChassisSpeed *target);
 /// @param route 路线编号，取值1~3。
 /// @return 接受返回1；底盘非IDLE/DONE状态或路线无效返回0，原任务不变。
 /// @note 同一RobotTask顺序调用；返回1不表示任务完成，不直接操作硬件。
-/// @note 当前仅保存任务请求；周期执行和取消逻辑接通前，暂不供状态机调用。
+/// @note 周期流程已接入；现场判据未配置且自动运动关闭，暂不用于实车自动运行。
 uint8_t App_Chassis_StartLine1(uint8_t route);
 
 /// @brief 更新一次底盘平滑速度目标。
@@ -220,4 +220,23 @@ uint8_t App_Chassis_Start(void);
 uint8_t App_Chassis_Run(const ChassisMotorMap *map,
                        uint8_t enabled,
                        float dt_s);
+// 对B的阶段接口，名称与签名沿用V1.4。
+// Start接受返回1，忙、故障、未就绪或路线无效返回0；不会阻塞等待。
+// Stop仅取消对应任务，RequestStop取消全部；取消不报告正常完成。
+// 汇合/出环连续交接时，完成查询可为1但状态仍为RUNNING，表示流程边界而非停稳。
+// B需先判断FAULT，再启动下一阶段。允许LINE1→LAP、LAP→LINE2或TUNNEL。
+// IsTunnelInside锁存本次可靠入内的事实；新任务、取消、禁用清除。
+// SetLight每周期Run前提交，格式错误返回0，输入只对当周期有效。
+uint8_t App_Chassis_StartLap(uint8_t route);
+void App_Chassis_StopLap(void);
+uint8_t App_Chassis_IsLapDone(void);
+uint8_t App_Chassis_PassTunnel(uint8_t route);
+uint8_t App_Chassis_StartLine2(uint8_t route);
+void App_Chassis_StopLine1(void);
+void App_Chassis_StopLine2(void);
+uint8_t App_Chassis_IsArrived(void);
+uint8_t App_Chassis_IsTunnelInside(void);
+uint8_t App_Chassis_SetLight(uint8_t color, uint8_t valid);
+void App_Chassis_RequestStop(void);
+
 #endif

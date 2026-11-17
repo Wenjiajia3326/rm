@@ -166,6 +166,12 @@
 #define CHASSIS_LINE_FORWARD_MPS   0.0f  // 循迹前进速度，单位m/s。
 // 特征观察速度，单位m/s；0表示未标定，实测后应低于正常循迹速度。
 #define CHASSIS_LINE_OBSERVE_MPS   0.0f
+
+// 最长观察时间，秒；0表示尚未配置，进入观察即报告失败。
+#define CHASSIS_LINE_OBSERVE_TIMEOUT_S  0.0f
+
+// 正常循迹允许连续模糊图案的最长时间，秒；0表示尚未配置。
+#define CHASSIS_LINE_UNCLEAR_TIMEOUT_S  0.0f
 #define CHASSIS_LINE_KP            0.0f  // 转向比例系数，单位(rad/s)/mm。
 #define CHASSIS_LINE_MAX_TURN_RPS  0.0f  // 转向角速度绝对值上限，单位rad/s。
 
@@ -181,5 +187,16 @@
 // 普通丢线恢复参数：0表示尚未标定，不能用于实车找线。
 #define CHASSIS_LINE_RECOVER_RPS        0.0f  // 原地找线角速度，rad/s。
 #define CHASSIS_LINE_RECOVER_TIMEOUT_S  0.0f  // 最长找线时间，秒。
+
+// 自动流程配置：0占位尚未标定；写好流程不等于解锁实车。
+#define CHASSIS_AUTO_MOTION_READY       0U  // 自动运动总开关，当前关闭。
+#define CHASSIS_HANDOFF_TIMEOUT_S      0.0f // 连续交接等待B的时限。
+#define CHASSIS_GAP_SPEED_MPS          0.0f
+#define CHASSIS_GAP_TIMEOUT_S          0.0f
+#define CHASSIS_LAP_TIMEOUT_S          0.0f
+#define CHASSIS_TUNNEL_SPEED_MPS       0.0f
+#define CHASSIS_TUNNEL_TIMEOUT_S       0.0f
+#define CHASSIS_STOP_WHEEL_RPS         0.0f
+#define CHASSIS_STOP_CONFIRM_S         0.0f // 有效四轮反馈连续停稳时间。
 
 #endif /* APP_CONFIG_H */

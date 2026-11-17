@@ -9,7 +9,7 @@ typedef enum
 {
     LINE_NO_TARGET = 0,  // 暂时没有可用目标：本周期给零请求，后续仍可继续处理。
     LINE_TARGET_READY,  // 已生成本周期的速度请求。
-    LINE_FAILED,        // 恢复最终失败：交给底盘记录故障，不再继续本次任务。
+    LINE_FAILED,        // 循迹处理失败：交给底盘记录故障，不再继续本次任务。
     LINE_FEATURE_DONE   // 本次特征处理完成一次，同时给出有效循迹目标；不是整段任务完成。
 } LineResult;
 
