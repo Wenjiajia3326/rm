@@ -1,6 +1,6 @@
 /**
  * @file    bsp_log.c
- * @brief   日志输出实现：vsnprintf 格式化到静态缓冲 + 阻塞发送到 USART1（板载 CH340）。
+ * @brief   日志输出实现：vsnprintf 格式化到静态缓冲 + 阻塞发送。
  * @owner   电控B
  *
  * 为什么不用 printf 重定向：重定向要改 syscalls.c 的 _write，且 printf 内部有全局锁、
@@ -8,11 +8,19 @@
  */
 
 #include "bsp_log.h"
-#include "usart.h"      /* huart1 */
+#include "usart.h"      /* huart1 / huart3 */
 
 #include <stdarg.h>     /* va_list / va_start / va_end */
 #include <stdio.h>      /* vsnprintf */
 #include <string.h>     /* strlen */
+
+/**
+ * 日志串口选择
+ *
+ * 用 &huart1（PA9/PA10，外接 CH340/ZLink）。
+ * 调试期如需临时改到 &huart3（H3 口 PB10/PB11），注意 USART3 是视觉口，别同时接相机。
+ */
+#define BSP_LOG_UART            (&huart1)
 
 /** 格式化缓冲：静态分配，避免每次调用在任务栈上开大数组 */
 static char s_log_buf[BSP_LOG_MAX_LEN];
@@ -49,7 +57,7 @@ void BSP_Log_Print(const char *str)
         return;
     }
 
-    (void)HAL_UART_Transmit(&huart1, (uint8_t *)str, len, 10U);
+    (void)HAL_UART_Transmit(BSP_LOG_UART, (uint8_t *)str, len, 10U);
 }
 
 /**

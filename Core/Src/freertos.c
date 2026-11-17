@@ -29,6 +29,7 @@
 #include "app_chassis.h"
 #include "app_config.h"
 #include "app_robot.h"
+#include "app_selftest.h"
 #include "app_remote.h"
 #include "app_vision.h"
 #include "bsp_uart.h"
@@ -151,6 +152,10 @@ void StartRobotTask(void *argument)
     LOG("mode=%s period=%ums\r\n",
         App_Robot_GetModeName(App_Robot_GetMode()),
         (unsigned int)CHASSIS_CONTROL_PERIOD_MS);
+
+#if (APP_SELFTEST_ENABLE != 0)
+    (void)App_Selftest_Run();
+#endif
 
     // 仅启动一次，保存底盘是否准备成功。
     chassis_ready = App_Chassis_Start(); // 检查配置并初始化底盘，把启动结果保存下来。

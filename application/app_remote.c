@@ -29,6 +29,9 @@ static uint8_t s_link_ok;
 /** 最近一次收到有效帧的 tick */
 static uint32_t s_last_rx_tick;
 
+/** 本轮延迟是否已打过警告（避免每 10 ms 刷一条） */
+static uint8_t s_have_warned;
+
 /** 上一次的按键状态，用于边沿检测 */
 static uint8_t s_prev_btn_low;
 static uint8_t s_prev_btn_high;
@@ -257,8 +260,9 @@ static void App_Remote_CheckLink(void)
         App_Robot_OnLinkLost();
         LOG("remote link lost (%lu ms)\r\n", (unsigned long)elapsed);
     }
-    else if (elapsed > RC_RX_WARN_MS)
+    else if ((elapsed > RC_RX_WARN_MS) && (s_have_warned == 0U))
     {
+        s_have_warned = 1U;
         LOG("remote frame late (%lu ms)\r\n", (unsigned long)elapsed);
     }
 }
@@ -273,6 +277,7 @@ void App_Remote_Init(void)
     s_fine_mode = 0U;
     s_link_ok = 1U;
     s_last_rx_tick = HAL_GetTick();
+    s_have_warned = 0U;
     s_prev_btn_low = 0U;
     s_prev_btn_high = 0U;
 
@@ -292,6 +297,7 @@ void App_Remote_Update(void)
     {
         s_last_rx_tick = HAL_GetTick();
         s_link_ok = 1U;
+        s_have_warned = 0U;
 
         App_Remote_HandleFrame(&data);
     }
