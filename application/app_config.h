@@ -164,7 +164,22 @@
 
 // 循迹参数，0表示尚未标定，暂不作为可运行参数。
 #define CHASSIS_LINE_FORWARD_MPS   0.0f  // 循迹前进速度，单位m/s。
+// 特征观察速度，单位m/s；0表示未标定，实测后应低于正常循迹速度。
+#define CHASSIS_LINE_OBSERVE_MPS   0.0f
 #define CHASSIS_LINE_KP            0.0f  // 转向比例系数，单位(rad/s)/mm。
 #define CHASSIS_LINE_MAX_TURN_RPS  0.0f  // 转向角速度绝对值上限，单位rad/s。
+
+// 外侧连续检测到黑色的确认次数，初始值等待实车验证。
+#define CHASSIS_LINE_CONFIRM_COUNT  3U
+
+// 大转弯角速度的大小，单位rad/s；0表示尚未标定。
+#define CHASSIS_LINE_TURN_RPS        0.0f
+
+// 一次转弯允许的最长时间，单位秒；0表示尚未配置。
+#define CHASSIS_LINE_TURN_TIMEOUT_S  0.0f
+
+// 普通丢线恢复参数：0表示尚未标定，不能用于实车找线。
+#define CHASSIS_LINE_RECOVER_RPS        0.0f  // 原地找线角速度，rad/s。
+#define CHASSIS_LINE_RECOVER_TIMEOUT_S  0.0f  // 最长找线时间，秒。
 
 #endif /* APP_CONFIG_H */

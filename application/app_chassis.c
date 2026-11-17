@@ -6,7 +6,7 @@
 #include "pid.h"
 #include "app_config.h"
 #include <math.h>
-#include "line.h"
+#include "app_line.h"
 
 /// @brief 底盘内部的自动任务类型。
 typedef enum
@@ -22,6 +22,38 @@ static ChassisTask chassis_task = CHASSIS_TASK_NONE;
 // 本次任务选择的路线：1~3为有效路线，0表示尚未选择。
 static uint8_t chassis_route = 0U;
 
+// 目前只填写已确认的入口动作，每行对应一条路线。
+static const LineAction line_route_action[3][1] =
+{
+    {LINE_ACTION_LEFT},      // 路线1：进入左侧支路。
+    {LINE_ACTION_STRAIGHT},  // 路线2：进入中间支路。
+    {LINE_ACTION_RIGHT}      // 路线3：进入右侧支路。
+};
+
+// 当前待完成的动作下标，0表示入口选择尚未完成。
+static uint8_t line_step = 0U;
+
+static LineAction App_Chassis_Get_Line_Action(void)
+{
+    // 路线号从1开始，数组下标从0开始。
+    if (chassis_route < 1U || chassis_route > 3U)
+    {
+        return LINE_ACTION_WAIT;
+    }
+
+    if (line_step >= sizeof(line_route_action[0]) /
+                     sizeof(line_route_action[0][0]))
+    {
+        // 路线1、3完成入口选择后，先按缓弯方案连续循迹。
+        // 路线2等待后续直角顺序；表末尾不表示到达汇合点。
+        if (chassis_route == 1U || chassis_route == 3U)
+        {
+            return LINE_ACTION_FOLLOW;
+        }
+        return LINE_ACTION_WAIT;
+    }
+    return line_route_action[chassis_route - 1U][line_step];
+}
 // 1表示本次任务正常完成；0表示尚未完成，取消任务不能置1。
 static uint8_t chassis_task_done = 0U;
 
@@ -94,7 +126,11 @@ void App_Chassis_Init(void)
     // 重新初始化后，不继续执行之前的自动任务。
     chassis_task = CHASSIS_TASK_NONE;
     chassis_route = 0U;
+    line_step = 0U;
     chassis_task_done = 0U;
+
+    // 初始化或接收新任务时，清除上一次的计数与确认标记。
+    App_Line_Reset();
 
     chassis_target.vx = 0.0f;
     chassis_target.vy = 0.0f;
@@ -176,7 +212,11 @@ uint8_t App_Chassis_StartLine1(uint8_t route)
 
     chassis_task = CHASSIS_TASK_LINE1;
     chassis_route = route;
+    line_step = 0U;  // 新任务从入口选择开始。
     chassis_task_done = 0U;
+
+    // 初始化或接收新任务时，清除上一次的计数与确认标记。
+    App_Line_Reset();
 
     chassis_status = CHASSIS_STATUS_RUNNING;
 
@@ -681,38 +721,17 @@ uint8_t App_Chassis_Start(void)
 
     return 1;
 }
-// 普通循迹时更新速度目标。
-// 调用前由任务逻辑排除停线、路口等特殊图案。
-// 返回1表示成功生成目标；返回0表示本次不能循迹。
-static uint8_t App_Chassis_Update_Line(const LineInput *input)
-{
-    float offset_mm;  // 本次检测到的线路偏移，左正右负。
-
-    // 先清除旧目标，避免本次计算失败后继续沿用旧命令。
-    chassis_target.vx = 0.0f;
-    chassis_target.vy = 0.0f;
-    chassis_target.wz = 0.0f;
-
-    if (Line_Calc_Offset(input, &offset_mm) == 0)
-    {
-        return 0;
-    }
-
-    // 一边前进，一边根据线路偏移转向。
-    chassis_target.vx = CHASSIS_LINE_FORWARD_MPS;
-    chassis_target.wz = Line_Calc_Turn(
-        offset_mm,
-        CHASSIS_LINE_KP,
-        CHASSIS_LINE_MAX_TURN_RPS);
-
-    return 1;
-}
-
 uint8_t App_Chassis_Run(const ChassisMotorMap *map,
                        uint8_t enabled,
                        float dt_s)
 {
     uint8_t motion_allowed = enabled;  // B的许可只能被任务逻辑进一步收紧。
+
+    // 禁用或离开第一段循迹后，清除计数与确认标记。
+    if (enabled == 0U || chassis_task != CHASSIS_TASK_LINE1)
+    {
+        App_Line_Reset();
+    }
 
     // 根据当前任务，决定本周期是否允许执行运动控制。
     switch (chassis_task)
@@ -726,11 +745,62 @@ uint8_t App_Chassis_Run(const ChassisMotorMap *map,
 
         case CHASSIS_TASK_LINE1:
         {
-            // 第一段循迹尚未接入纠偏计算，暂时保持零输出。
+            ChassisSpeed line_target = {0};  // 循迹模块交回的整车速度请求。
+            LineResult line_result;         // 本周期的循迹处理结果。
+            LineAction action = App_Chassis_Get_Line_Action();  // 当前进度要求的动作。
+
+            // 每周期先清掉旧目标，防止暂时无目标时沿用上一次的行驶命令。
+            chassis_target = (ChassisSpeed){0};
+
+            // 特殊路段处理尚未完成，迁移后仍保持自动运动关闭。
             motion_allowed = 0U;
+            // 最终失败后保持故障，不在下一周期自动重新开始循迹。
+            if (enabled == 0U || chassis_status == CHASSIS_STATUS_FAULT)
+            {
+                break;
+            }
+
+            // 传入动作意图，由循迹模块等待合适的特征再执行。
+            line_result = App_Line_Update(
+                &line_target, dt_s, action);
+            switch (line_result)
+            {
+                case LINE_TARGET_READY:
+                {
+                    chassis_target = line_target;
+                    break;
+                }
+
+                case LINE_FEATURE_DONE:
+                {
+                    // 只完成一处特征，不将整段循迹设为DONE。
+                    // 完成反馈携带有效循迹速度，流程交接不主动插入零目标。
+                    chassis_target = line_target;
+                    // 明确动作完成才推进；普通循迹和等待不推进。
+                    if (action == LINE_ACTION_STRAIGHT ||
+                        action == LINE_ACTION_LEFT ||
+                        action == LINE_ACTION_RIGHT)
+                    {
+                        line_step++;
+                    }
+                    break;
+                }
+
+                case LINE_FAILED:
+                {
+                    // 后续寻线超时会返回此结果；由底盘层记录任务故障。
+                    chassis_status = CHASSIS_STATUS_FAULT;
+                    break;
+                }
+
+                default:
+                {
+                    // LINE_NO_TARGET：暂时没有合适目标，本周期保持零请求。
+                    break;
+                }
+            }
             break;
         }
-
         default:
         {
             // 其他自动任务尚未实现，暂时保持零输出。
