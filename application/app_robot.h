@@ -107,6 +107,6 @@ uint8_t App_Robot_GetLoad(void);
  * @param mode 模式取值
  * @return 静态字符串（"INIT"/"COMP_AUTO"/"COMP_MANUAL"/"ARM_DEBUG"/"CHASSIS_DEBUG"）
  */
-const char *App_Robot_ModeName(uint8_t mode);
+const char *App_Robot_GetModeName(uint8_t mode);
 
 #endif /* APP_ROBOT_H */

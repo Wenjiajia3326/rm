@@ -20,6 +20,7 @@ typedef struct
     uint16_t            read_index;     /**< 读索引：只有任务侧修改 */
     volatile uint16_t   write_index;    /**< 写索引：只有中断通道使用 */
     uint8_t             it_byte;        /**< 逐字节中断的接收单元 */
+    uint16_t            test_length;    /**< 自测注入的写索引；0 = 正常模式 */
 } BspUartChannel_t;
 
 /** 视觉口缓冲（DMA 直接写） */
@@ -42,6 +43,11 @@ static BspUartChannel_t s_channel[BSP_UART_NUM];
  */
 static uint16_t BSP_Uart_CalcWriteIndex(const BspUartChannel_t *channel)
 {
+    if (channel->test_length != 0U)
+    {
+        return channel->test_length;
+    }
+
     if (channel->hdma != 0)
     {
         return (uint16_t)(channel->buffer_size - __HAL_DMA_GET_COUNTER(channel->hdma));
@@ -198,5 +204,29 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     {
         BSP_Uart_RestartDmaRx(BSP_UART_REMOTE);
         return;
+    }
+}
+
+void BSP_Uart_TestInject(uint8_t port, const uint8_t *data, uint16_t length)
+{
+    BspUartChannel_t *channel = &s_channel[port];
+    uint16_t i;
+
+    /* length 为 0：结束自测，恢复正常（写索引回到 DMA/中断计数） */
+    if (length == 0U)
+    {
+        channel->test_length = 0U;
+        channel->read_index = 0U;
+        return;
+    }
+
+    /* 清空索引，把注入的数据放在缓冲开头 */
+    channel->read_index = 0U;
+    channel->write_index = 0U;
+    channel->test_length = length;
+
+    for (i = 0U; i < length; i++)
+    {
+        channel->buffer[i] = data[i];
     }
 }

@@ -75,4 +75,15 @@ void BSP_Uart_AddReadIndex(uint8_t port, uint16_t length);
  */
 void BSP_Uart_SendData(uint8_t port, const uint8_t *data, uint16_t length);
 
+/**
+ * @brief 自测用：把一段字节当作"已收到的数据"注入指定通道
+ * @param port   通道编号
+ * @param data   待注入的字节
+ * @param length 字节数（不得超过缓冲大小）
+ * @return 无
+ * @note   仅供上电自测/调试使用；正式路径不调用，未引用时会被链接器回收
+ * @note   会清空该通道的读写索引，注入后解析器把它当成新收到的数据
+ */
+void BSP_Uart_TestInject(uint8_t port, const uint8_t *data, uint16_t length);
+
 #endif /* BSP_UART_H */

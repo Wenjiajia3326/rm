@@ -1,16 +1,17 @@
 /**
  * @file    bsp_log.h
- * @brief   日志输出接口：固定走板载 CH340（USART1），阻塞发送，可整体开关。
+ * @brief   日志输出接口：阻塞发送，可整体开关。
  * @owner   电控B
  *
  * 设计说明：
- * 1) 只走 USART1（PA9/PA10 → 板载 CH340），调用方不需要指定通道；
+ * 1) 走哪路串口由 bsp_log.c 的 BSP_LOG_UART 决定（默认 USART1，调试期临时 USART3），
+ *    调用方不需要指定通道；
  * 2) 发送是阻塞的：80 字节 @115200 约 6.9 ms，因此不要放在 10 ms 主环的每帧路径里；
  * 3) 本文件只提供函数；开关 APP_LOG_ENABLE 与 LOG(...) 宏在 application/app_config.h，
  *    这样 bsp 层不依赖 application 层（分层方向：app -> bsp）。
  *
  * 用法：
- *   LOG("mode -> %s\r\n", App_Robot_ModeName(mode));
+ *   LOG("mode -> %s\r\n", App_Robot_GetModeName(mode));
  *   LOG("rx=%lu lost=%lu\r\n", Remote_GetFrameCount(), Remote_GetLostCount());
  */
 
