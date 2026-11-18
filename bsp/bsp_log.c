@@ -17,10 +17,10 @@
 /**
  * 日志串口选择
  *
- * 用 &huart1（PA9/PA10，外接 CH340/ZLink）。
- * 调试期如需临时改到 &huart3（H3 口 PB10/PB11），注意 USART3 是视觉口，别同时接相机。
+ * 调试期用 &huart3（PB10/PB11，核心板排针可接）；正式版应改回 &huart1（PA9/PA10）。
+ * 注意：USART3 是视觉口，用日志时不要同时接视觉相机。
  */
-#define BSP_LOG_UART            (&huart1)
+#define BSP_LOG_UART            (&huart3)
 
 /** 格式化缓冲：静态分配，避免每次调用在任务栈上开大数组 */
 static char s_log_buf[BSP_LOG_MAX_LEN];

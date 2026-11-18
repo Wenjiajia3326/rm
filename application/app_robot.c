@@ -103,7 +103,7 @@ void App_Robot_Update(void)
             break;
 
         case APP_MODE_ARM_DEBUG_V:
-            /* TODO: 将来改为 App_Arm_Debug_Update(); 单关节微调 */
+            /* 调试推进由 App_Remote_Update() 按摇杆调 App_Arm_Debug_Pulse_Update() */
             break;
 
         case APP_MODE_CHASSIS_DEBUG_V:

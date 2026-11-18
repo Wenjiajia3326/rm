@@ -176,13 +176,49 @@ static void App_Remote_HandleEstop(uint8_t pressed)
 }
 
 /**
+ * @brief 调试模式下用旋转四键直选关节
+ * @param pressed 本帧新按下的低 8 键位图
+ * @return 无
+ * @note   快左=底座 / 快右=下臂 / 精左=上臂 / 精右=夹爪
+ */
+static void App_Remote_HandleArmDebugKeys(uint8_t pressed)
+{
+    if ((pressed & RC_BTN_ROT_FAST_LEFT) != 0U)
+    {
+        App_Arm_Debug_Select(ARM_JOINT_BASE);
+    }
+
+    if ((pressed & RC_BTN_ROT_FAST_RIGHT) != 0U)
+    {
+        App_Arm_Debug_Select(ARM_JOINT_ARM1);
+    }
+
+    if ((pressed & RC_BTN_ROT_SLOW_LEFT) != 0U)
+    {
+        App_Arm_Debug_Select(ARM_JOINT_ARM2);
+    }
+
+    if ((pressed & RC_BTN_ROT_SLOW_RIGHT) != 0U)
+    {
+        App_Arm_Debug_Select(ARM_JOINT_GRIP);
+    }
+}
+
+/**
  * @brief 处理机械臂动作键（按下沿触发一次）
  * @param pressed 本帧新按下的低 8 键位图
  * @return 无
- * @note   目前只打日志；app_arm 写好后替换成动作请求
+ * @note   只在比赛手动和机械臂调试下响应，其余模式一律不动
  */
 static void App_Remote_HandleArmKeys(uint8_t pressed)
 {
+    uint8_t mode = App_Robot_GetMode();
+
+    if ((mode != APP_MODE_COMP_MANUAL_V) && (mode != APP_MODE_ARM_DEBUG_V))
+    {
+        return;
+    }
+
     if ((pressed & RC_BTN_ARM_READY) != 0U)
     {
         App_Arm_Set_Action(ARM_ACT_READY);
@@ -230,6 +266,12 @@ static void App_Remote_HandleFrame(const RemoteData_t *data)
 
     App_Remote_HandleFineKey(pressed_high);
     App_Remote_HandleEstop(pressed_high);
+
+    if (App_Robot_GetMode() == APP_MODE_ARM_DEBUG_V)
+    {
+        App_Remote_HandleArmDebugKeys(pressed_low);
+    }
+
     App_Remote_HandleArmKeys(pressed_low);
 
     s_prev_btn_low = data->btn_low;
@@ -303,6 +345,11 @@ void App_Remote_Update(void)
     }
 
     App_Remote_CheckLink();
+
+    if (App_Robot_GetMode() == APP_MODE_ARM_DEBUG_V)
+    {
+        App_Arm_Debug_Pulse_Update(s_vx, s_fine_mode);
+    }
 }
 
 int8_t App_Remote_GetVx(void)

@@ -25,7 +25,7 @@ typedef enum
 /** 机构动作（对应手柄 A/B/C/D 键） */
 typedef enum
 {
-    ARM_ACT_NONE = 0,       /**< 空闲 */
+    ARM_ACT_FREE = 0,       /**< 空闲 */
 
     /** A: 回收纳位+伸出（空载->空载） */
     ARM_ACT_READY,
@@ -73,8 +73,26 @@ uint8_t App_Arm_IsBusy(void);
 
 /**
  * @brief 查询当前动作
- * @return 当前动作，空闲为 ARM_ACT_NONE
+ * @return 当前动作，空闲为 ARM_ACT_FREE
  */
 ArmAction_t App_Arm_GetAction(void);
+
+/**
+ * @brief 调试模式下选中一个关节
+ * @param joint 关节编号（ARM_JOINT_BASE / ARM1 / ARM2 / GRIP）
+ * @return 无
+ * @note   只在 ARM_DEBUG 模式下调用；重复选同一个关节是幂等的
+ */
+void App_Arm_Debug_Select(ArmJoint_t joint);
+
+/**
+ * @brief 调试模式 10 ms 推进：按摇杆推当前选中关节的脉宽
+ * @param stick 摇杆前后量（-100~100，+ = 脉宽增）
+ * @param fine  1 = 细调（100 脉宽/s），0 = 粗调（500 脉宽/s）
+ * @return 无
+ * @note   没选关节、或段表动作还在跑时直接返回；
+ *         脉宽被夹在软限位内；本次上电第一推动作用长 T 缓动
+ */
+void App_Arm_Debug_Pulse_Update(int8_t stick, uint8_t fine);
 
 #endif /* APP_ARM_H */

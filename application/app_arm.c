@@ -34,6 +34,40 @@ static const uint8_t s_servo_id[ARM_JOINT_NUM] =
     SERVO_ID_BASE, SERVO_ID_ARM1, SERVO_ID_ARM2, SERVO_ID_GRIP
 };
 
+/* ===================== 调试模式（ARM_DEBUG） ===================== */
+/*
+ * 旋转四键直选关节，摇杆上下推脉宽，精细键切粗/细。
+ * 舵机只发不收，所以这里维护"记账脉宽"：开机假设 1500，之后每次下发都更新。
+ */
+
+/** 记账脉宽：主控认为 4 个关节当前的目标值 */
+static uint16_t s_pulse[ARM_JOINT_NUM];
+
+/** 最后一次真正下发的脉宽（判断有没有变化用） */
+static uint16_t s_last_pulse[ARM_JOINT_NUM];
+
+/** 当前选中关节，ARM_JOINT_NUM = 没选 */
+static uint8_t s_debug_select_joint;
+
+/** 不足 1 脉宽的部分（单位：脉宽的 1/100） */
+static int16_t s_debug_acc;
+
+/** 本次上电第一次动：用长 T 慢慢蹭 */
+static uint8_t s_debug_first_flag;
+
+/** 软限位：机械B 回填《机构接口单》#5 后按关节收窄 */
+#define ARM_DEBUG_PULSE_MIN     800U
+#define ARM_DEBUG_PULSE_MAX     2200U
+
+/** 推进速度：主环 10 ms 一次，满推每 tick 加多少脉宽（粗 500/s、细 100/s） */
+#define ARM_DEBUG_STEP_COARSE   5
+#define ARM_DEBUG_STEP_FINE     1
+
+/** 指令 T 只影响平滑、不影响速度；给大了松手后还会多走一段 */
+#define ARM_DEBUG_T_COARSE_MS   50U
+#define ARM_DEBUG_T_FINE_MS     100U
+#define ARM_DEBUG_T_FIRST_MS    3000U
+
 /* ===================== 动作表（脉宽待机械B 标定，未标定为 0） ===================== */
 /* 每个关节的顺序：{ 底座, 下臂, 上臂, 夹具 } */
 
@@ -109,14 +143,14 @@ static const char *App_Arm_ActionName(ArmAction_t action)
         case ARM_ACT_PICK:  return "PICK";
         case ARM_ACT_PLACE: return "PLACE";
         case ARM_ACT_HOME:  return "HOME";
-        case ARM_ACT_NONE:  return "NONE";
+        case ARM_ACT_FREE:  return "FREE";
     }
 }
 
 /**
  * @brief 取动作对应的分段表
  * @param action 动作
- * @return 分段表指针；ARM_ACT_NONE 返回 0
+ * @return 分段表指针；ARM_ACT_FREE 返回 0
  * @note   C 动作按当前高度档（App_Robot_GetLevel）选一层/二层/三层表
  */
 static const ArmPlan_t *App_Arm_GetPlan(ArmAction_t action)
@@ -147,7 +181,7 @@ static const ArmPlan_t *App_Arm_GetPlan(ArmAction_t action)
 
             return &plan_place_l1;
 
-        case ARM_ACT_NONE:
+        case ARM_ACT_FREE:
             return 0;
     }
 }
@@ -164,6 +198,14 @@ static void App_Arm_SendSegment(const ArmSegment_t *segment)
 
     for (joint = 0U; joint < (uint8_t)ARM_JOINT_NUM; joint++)
     {
+        if (segment->pulse[joint] == 0U)
+        {
+            continue;           /* 0 = 本段不发，别夹到 500 转到底 */
+        }
+
+        s_pulse[joint] = segment->pulse[joint];   /* 记账跟着动作走 */
+        s_last_pulse[joint] = segment->pulse[joint];
+
         Servo_Move(s_servo_id[joint], segment->pulse[joint], segment->time_ms);
     }
 }
@@ -187,7 +229,7 @@ static void App_Arm_Renew_Load_State(void)
 
     LOG("arm done: %s\r\n", App_Arm_ActionName(s_action));
 
-    s_action = ARM_ACT_NONE;
+    s_action = ARM_ACT_FREE;
     s_plan = 0;
     s_step = 0U;
 }
@@ -196,14 +238,21 @@ void App_Arm_Init(void)
 {
     uint8_t joint;
 
-    s_action = ARM_ACT_NONE;
+    s_action = ARM_ACT_FREE;
     s_plan = 0;
     s_step = 0U;
     s_step_tick = 0U;
 
+    s_debug_select_joint = (uint8_t)ARM_JOINT_NUM;
+    s_debug_acc = 0;
+    s_debug_first_flag = 1U;
+
     /* 开机释力：避免舵机上电自动冲向初始值 1500 */
     for (joint = 0U; joint < (uint8_t)ARM_JOINT_NUM; joint++)
     {
+        s_pulse[joint] = 1500U;     /* 假设值：实际位置未知 */
+        s_last_pulse[joint] = 1500U;
+
         Servo_SetBootTorque(s_servo_id[joint], 0U);
     }
 }
@@ -212,7 +261,7 @@ void App_Arm_Update(void)
 {
     const ArmSegment_t *segment;
 
-    if (s_action == ARM_ACT_NONE)
+    if (s_action == ARM_ACT_FREE)
     {
         return;
     }
@@ -241,7 +290,7 @@ void App_Arm_Set_Action(ArmAction_t action)
     uint8_t load;
     const ArmPlan_t *plan;
 
-    if (s_action != ARM_ACT_NONE)
+    if (s_action != ARM_ACT_FREE)
     {
         LOG("arm busy: ignore %s\r\n", App_Arm_ActionName(action));
         return;
@@ -286,10 +335,75 @@ void App_Arm_Set_Action(ArmAction_t action)
 
 uint8_t App_Arm_IsBusy(void)
 {
-    return (s_action != ARM_ACT_NONE) ? 1U : 0U;
+    return (s_action != ARM_ACT_FREE) ? 1U : 0U;
 }
 
 ArmAction_t App_Arm_GetAction(void)
 {
     return s_action;
+}
+
+void App_Arm_Debug_Select(ArmJoint_t joint)
+{
+    s_debug_select_joint = (uint8_t)joint;
+    s_debug_acc = 0;
+
+    LOG("arm dbg: joint %u pulse=%u\r\n",
+        (unsigned int)((uint8_t)joint + 1U), (unsigned int)s_pulse[joint]);
+}
+
+void App_Arm_Debug_Pulse_Update(int8_t stick, uint8_t fine)
+{
+    int16_t rate;
+    int16_t delta;
+    int16_t pulse;
+    uint16_t time_ms;
+
+    if ((s_debug_select_joint >= (uint8_t)ARM_JOINT_NUM) || (s_action != ARM_ACT_FREE))
+    {
+        return;             /* 没选关节；或段表动作还在跑，会打架 */
+    }
+
+    rate = (fine != 0U) ? ARM_DEBUG_STEP_FINE : ARM_DEBUG_STEP_COARSE;
+    s_debug_acc += (int16_t)((int16_t)stick * rate);
+
+    delta = (int16_t)(s_debug_acc / 100);
+    s_debug_acc -= (int16_t)(delta * 100);
+
+    if (delta == 0)
+    {
+        return;             /* 累加还没到一个脉宽 */
+    }
+
+    pulse = (int16_t)s_pulse[s_debug_select_joint] + delta;
+
+    if (pulse > (int16_t)ARM_DEBUG_PULSE_MAX)
+    {
+        pulse = (int16_t)ARM_DEBUG_PULSE_MAX;
+    }
+    else if (pulse < (int16_t)ARM_DEBUG_PULSE_MIN)
+    {
+        pulse = (int16_t)ARM_DEBUG_PULSE_MIN;
+    }
+
+    if (pulse == (int16_t)s_last_pulse[s_debug_select_joint])
+    {
+        s_debug_acc = 0;    /* 顶到限位：清累加，反向时立刻响应 */
+        return;
+    }
+
+    if (s_debug_first_flag != 0U)
+    {
+        time_ms = ARM_DEBUG_T_FIRST_MS;
+        s_debug_first_flag = 0U;
+    }
+    else
+    {
+        time_ms = (fine != 0U) ? ARM_DEBUG_T_FINE_MS : ARM_DEBUG_T_COARSE_MS;
+    }
+
+    s_pulse[s_debug_select_joint] = (uint16_t)pulse;
+    s_last_pulse[s_debug_select_joint] = (uint16_t)pulse;
+
+    Servo_Move(s_servo_id[s_debug_select_joint], (uint16_t)pulse, time_ms);
 }

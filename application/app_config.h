@@ -79,13 +79,13 @@
 #define RC_BTN_ARM_PICK                 0x02U   ///< B 夹紧并抬起
 #define RC_BTN_ARM_PLACE                0x04U   ///< C 下降+松开+后撤
 #define RC_BTN_ARM_HOME                 0x08U   ///< D 收回
-#define RC_BTN_ROT_FAST_LEFT            0x10U   ///< 快速左旋（按住）
-#define RC_BTN_ROT_FAST_RIGHT           0x20U   ///< 快速右旋（按住）
-#define RC_BTN_ROT_SLOW_LEFT            0x40U   ///< 精细左旋（按住）
-#define RC_BTN_ROT_SLOW_RIGHT           0x80U   ///< 精细右旋（按住）
+#define RC_BTN_ROT_FAST_LEFT            0x10U   ///< 快速左旋（按住）；调试模式：选关节 1（底座）
+#define RC_BTN_ROT_FAST_RIGHT           0x20U   ///< 快速右旋（按住）；调试模式：选关节 2（下臂）
+#define RC_BTN_ROT_SLOW_LEFT            0x40U   ///< 精细左旋（按住）；调试模式：选关节 3（上臂）
+#define RC_BTN_ROT_SLOW_RIGHT           0x80U   ///< 精细右旋（按住）；调试模式：选关节 4（夹爪）
 
 /* btn_high：仅 2 个功能键，其余 6 位预留 */
-#define RC_BTN_FINE_MODE                0x01U   ///< 精细/修正切换（即时生效）
+#define RC_BTN_FINE_MODE                0x01U   ///< 精细/修正切换（即时生效）；调试模式：粗调/细调
 #define RC_BTN_ESTOP                    0x02U   ///< 急停（软件备份，硬件急停独立）
 
 /* ===================== 四、模式与档位取值（owner：电控B，与协议 V1.3 字段一致） ===================== */
