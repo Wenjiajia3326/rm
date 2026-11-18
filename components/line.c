@@ -57,6 +57,37 @@ uint8_t Line_Analyze(const LineInput *input, LinePattern *pattern)
     return 1;
 }
 
+uint8_t Line_Is_Clear(const LinePattern *pattern)
+{
+    if (pattern == NULL)
+    {
+        return 0U;
+    }
+
+    // 严格确认：外侧全白，中间只有一段由1或2个黑色探头组成的线。
+    return (pattern->left_black == 0U &&
+            pattern->right_black == 0U &&
+            pattern->middle_count > 0U &&
+            pattern->middle_count < 3U &&
+            pattern->group_count == 1U);
+}
+
+uint8_t Line_Has_Middle(const LineInput *input)
+{
+    uint8_t middle_count;  // 中间三路的黑色数量；输入已由Line_Analyze验证。
+
+    if (input == NULL)
+    {
+        return 0U;
+    }
+
+    middle_count = input->black[1] + input->black[2] + input->black[3];
+    // 普通循迹允许外侧同时触发，但中间全白、全黑或分开的101都不可用。
+    return (middle_count > 0U && middle_count < 3U &&
+            !(input->black[1] != 0U && input->black[2] == 0U &&
+              input->black[3] != 0U));
+}
+
 uint8_t Line_Calc_Offset(const LineInput *input, float *offset)
 {
     // 依据传感器尺寸资料，中间三路横向位置为左15mm、中0、右15mm。

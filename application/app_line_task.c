@@ -13,7 +13,7 @@ typedef enum
 } LineTaskState;
 static LineTaskState line_task_state;  // 当前循迹任务所处阶段，跨周期保留。
 static uint8_t line_segment;  // 循迹段编号：一为第一段，二为第二段。
-static uint8_t line_route;  // 电控乙选择的路线编号，取值一至三。
+static uint8_t line_route;  // 电控b选择的路线编号，取值一至三。
 static uint8_t line_step;  // 当前路线动作序号；零表示入口选路，完成一个特征动作后递增。
 static uint8_t line_gap_used;  // 当前断线窗口是否已经跨越成功；防止同一窗口重复触发。
 static float line_gap_time;  // 本次跨越断线及重新见线确认的累计时间，单位秒。
@@ -62,6 +62,9 @@ static TrackCheck App_Line_Task_GetAction(LineAction *action)
 }
 
 // 处理一次计划断线的跨越与重新见线确认；写出速度请求，连续确认成功后恢复普通循迹。
+// 后续实车可评估编码器里程方案：开始跨越时记录里程起点，以累计距离限制跨越范围。
+// 里程受打滑影响，是否采用及距离阈值待实测；当前尚未实现里程判断，仍按配置速度直行。
+// 跨越成功以探头连续确认新线为依据，不以走够距离或时间作为成功依据；时间保留作超时保护。
 static TaskResult App_Line_Task_Gap(const TrackInput *track,
                                     ChassisSpeed *target, float dt_s)
 {

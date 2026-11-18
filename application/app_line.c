@@ -219,15 +219,6 @@ static uint8_t App_Line_Begin_Turn(LineDirection direction)
     line_state = LINE_TURN;
     return 1U;
 }
-// 是否只有一段清晰的中间线；不判断它是不是正确的新支路。
-static uint8_t App_Line_Is_Clear(const LinePattern *pattern)
-{
-    return (pattern->left_black == 0U &&
-            pattern->right_black == 0U &&
-            pattern->middle_count > 0U &&
-            pattern->middle_count < 3U &&
-            pattern->group_count == 1U);
-}
 
 // 执行观察阶段的一个周期。
 // 路线要求提供方向；外侧特征和中间无黑确认共同决定直角转弯入口。
@@ -261,7 +252,7 @@ static LineResult App_Line_Observe(const LineInput *input,
     }
 
     // 只有要求直行且图案清晰才累计；图案中断或动作变化都重新确认。
-    if (action != LINE_ACTION_STRAIGHT || App_Line_Is_Clear(pattern) == 0U)
+    if (action != LINE_ACTION_STRAIGHT || Line_Is_Clear(pattern) == 0U)
     {
         line_observe_clear_count = 0U;
     }
@@ -383,7 +374,7 @@ static LineResult App_Line_Turn(const LineInput *input,
 
     // 使用现有的black[2]读取正中探头，不增加虚构的图案字段。
     if (line_turn_lost_middle != 0U &&
-        App_Line_Is_Clear(pattern) != 0U &&
+        Line_Is_Clear(pattern) != 0U &&
         input->black[2] != 0U)
     {
         if (line_turn_found_count < CHASSIS_LINE_CONFIRM_COUNT)
@@ -451,7 +442,7 @@ static LineResult App_Line_Recover(const LineInput *input,
     }
 
     // 先暂停旋转确认候选线，单次闪烁不能退出恢复。
-    if (App_Line_Is_Clear(pattern) != 0U && input->black[2] != 0U)
+    if (Line_Is_Clear(pattern) != 0U && input->black[2] != 0U)
     {
         line_recover_found_count++;
         if (line_recover_found_count >= CHASSIS_LINE_CONFIRM_COUNT)
@@ -580,14 +571,11 @@ LineResult App_Line_Update(ChassisSpeed *target,
             if (action == LINE_ACTION_FOLLOW)
             {
                 // 缓弯允许外侧同时触发；中间须有1或2个连续黑色。
-                clear = (pattern.middle_count > 0U &&
-                         pattern.middle_count < 3U &&
-                         !(input.black[1] != 0U && input.black[2] == 0U &&
-                           input.black[3] != 0U));
+                clear = Line_Has_Middle(&input);
             }
             else
             {
-                clear = App_Line_Is_Clear(&pattern);
+                clear = Line_Is_Clear(&pattern);
             }
 
             if (clear != 0U && App_Line_Calc_Target(&input, target) != 0U)

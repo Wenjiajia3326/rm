@@ -32,6 +32,18 @@ typedef struct
 uint8_t Line_Analyze(const LineInput *input, LinePattern *pattern);
 
 
+/// @brief 判断是否为一段清晰的中间线，要求两侧外侧探头均为白色。
+/// @param pattern 来自Line_Analyze成功分析的本周期图案。
+/// @return 中间有1或2个连续黑色且外侧全白时返回1，否则返回0；NULL返回0。
+/// @note 只判断图案，不代表已经进入正确支路或完成转弯。
+uint8_t Line_Is_Clear(const LinePattern *pattern);
+
+/// @brief 判断中间三路是否有1或2个连续黑色，允许外侧同时检测到黑色。
+/// @param input 已通过Line_Analyze验证的本周期有效五路采样。
+/// @return 中间线可用返回1；中间全白、全黑、分开的101或NULL返回0。
+/// @note 调用者先验证采样；本函数不读硬件，不改变状态，不判断路线或路口。
+uint8_t Line_Has_Middle(const LineInput *input);
+
 /// @brief 根据中间三路黑色检测结果估计线路横向偏移。
 /// @param input 完整五路采样，black各项及sample_valid只允许0或1。
 /// @param offset 保存偏移估计，单位mm，左正右负，范围-15到+15。
