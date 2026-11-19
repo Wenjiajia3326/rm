@@ -133,6 +133,7 @@ void StartRobotTask(void *argument)
     const TickType_t period_ticks = pdMS_TO_TICKS(CHASSIS_CONTROL_PERIOD_MS); // 把配置的10毫秒换成RTOS节拍数。
     TickType_t last_wake_tick; // 保存周期等待的计划时间基准，不是毫秒时间。
     uint8_t chassis_ready; // 启动结果：1表示准备成功，0表示失败。
+    uint8_t chassis_enabled; // 本周期是否允许底盘出力。
     uint32_t previous_ms; // 上一轮读取时间的时刻，单位毫秒。
     uint32_t current_ms; // 本轮读取时间的时刻，单位毫秒。
     uint32_t elapsed_ms; // 两次读取时间之间经过的毫秒数。
@@ -191,9 +192,17 @@ void StartRobotTask(void *argument)
             continue;
         }
 
-        // 先接通禁止运动时的采样和零输出，尚不接收运动命令。
-        // 禁止运动时返回0属于正常情况，不能据此取消启动成功状态。
-        (void)App_Chassis_Run(&motor_map, 0U, dt_s); // 传轮位表和实际间隔；0U禁止运动，暂不使用返回值。
+        // 运动许可：无故障、链路正常、机械臂空闲，且当前模式允许行驶。
+        // 自动阶段由 Auto 自己控制启停，这里不放行；底盘调试只调底盘。
+        chassis_enabled = (uint8_t)(
+            (App_Chassis_GetStatus() != CHASSIS_STATUS_FAULT) &&
+            (App_Remote_IsLinkOk() != 0U) &&
+            (App_Arm_IsBusy() == 0U) &&
+            ((App_Robot_GetMode() == APP_MODE_COMP_MANUAL_V) ||
+             (App_Robot_GetMode() == APP_MODE_CHASSIS_DEBUG_V)));
+
+        // 不许出力时返回0属于正常情况，不能据此取消启动成功状态。
+        (void)App_Chassis_Run(&motor_map, chassis_enabled, dt_s); // 传轮位表、本周期许可和实际间隔。
     }
   /* USER CODE END StartRobotTask */
 }

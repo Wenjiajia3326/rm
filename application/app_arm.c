@@ -216,7 +216,7 @@ static void App_Arm_SendSegment(const ArmSegment_t *segment)
  * @return 无
  * @note   B 抓取完成 -> 置携块；C 放置完成 -> 置空载
  */
-static void App_Arm_Renew_Load_State(void)
+static void App_Arm_Renew_State(void)
 {
     if (s_action == ARM_ACT_PICK)
     {
@@ -277,7 +277,7 @@ void App_Arm_Update(void)
 
     if (s_step >= s_plan->step_amount)
     {
-        App_Arm_Renew_Load_State();
+        App_Arm_Renew_State();
         return;
     }
 
