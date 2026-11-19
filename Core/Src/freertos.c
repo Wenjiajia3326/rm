@@ -133,7 +133,8 @@ void StartRobotTask(void *argument)
     const TickType_t period_ticks = pdMS_TO_TICKS(CHASSIS_CONTROL_PERIOD_MS); // 把配置的10毫秒换成RTOS节拍数。
     TickType_t last_wake_tick; // 保存周期等待的计划时间基准，不是毫秒时间。
     uint8_t chassis_ready; // 启动结果：1表示准备成功，0表示失败。
-    uint8_t chassis_enabled; // 本周期是否允许底盘出力。
+    uint8_t manual_drive_ok; // 本周期是否允许手动驾驶。
+    ChassisSpeed manual_target; // 摇杆换算出的实际速度目标。
     uint32_t previous_ms; // 上一轮读取时间的时刻，单位毫秒。
     uint32_t current_ms; // 本轮读取时间的时刻，单位毫秒。
     uint32_t elapsed_ms; // 两次读取时间之间经过的毫秒数。
@@ -192,17 +193,26 @@ void StartRobotTask(void *argument)
             continue;
         }
 
-        // 运动许可：无故障、链路正常、机械臂空闲，且当前模式允许行驶。
+        // 允许手动驾驶：模式对、无故障、链路正常、机械臂空闲。
         // 自动阶段由 Auto 自己控制启停，这里不放行；底盘调试只调底盘。
-        chassis_enabled = (uint8_t)(
+        manual_drive_ok = (uint8_t)(
             (App_Chassis_GetStatus() != CHASSIS_STATUS_FAULT) &&
             (App_Remote_IsLinkOk() != 0U) &&
             (App_Arm_IsBusy() == 0U) &&
             ((App_Robot_GetMode() == APP_MODE_COMP_MANUAL_V) ||
              (App_Robot_GetMode() == APP_MODE_CHASSIS_DEBUG_V)));
 
+        // 摇杆百分比换算成实际速度后提交；参数未填时换算结果仍是 0，不会误动。
+        if (manual_drive_ok != 0U)
+        {
+            manual_target.vx = (float)App_Remote_GetVx() * CHASSIS_MAX_LINEAR_MPS / 100.0f;
+            manual_target.vy = (float)App_Remote_GetVy() * CHASSIS_MAX_LINEAR_MPS / 100.0f;
+            manual_target.wz = (float)App_Remote_GetWz() * CHASSIS_MAX_ANGULAR_RPS / 100.0f;
+            (void)App_Chassis_SetTarget(&manual_target);
+        }
+
         // 不许出力时返回0属于正常情况，不能据此取消启动成功状态。
-        (void)App_Chassis_Run(&motor_map, chassis_enabled, dt_s); // 传轮位表、本周期许可和实际间隔。
+        (void)App_Chassis_Run(&motor_map, manual_drive_ok, dt_s); // 传轮位表、本周期许可和实际间隔。
     }
   /* USER CODE END StartRobotTask */
 }
