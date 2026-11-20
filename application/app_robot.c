@@ -6,6 +6,7 @@
 
 #include "app_robot.h"
 #include "app_config.h"
+#include "app_auto.h"
 #include "app_chassis.h"    /* 安全态出口：停车 */
 #include "bsp_log.h"
 
@@ -49,7 +50,8 @@ static void App_Robot_EnterMode(uint8_t mode)
             break;
 
         case APP_MODE_COMP_AUTO_V:
-            /* TODO: 自动流程复位到 A01（进入即开始） */
+            /* 进入自动：状态机复位，载荷置携块 */
+            App_Auto_Init();
             break;
 
         case APP_MODE_COMP_MANUAL_V:
@@ -80,7 +82,10 @@ static void App_Robot_EnterMode(uint8_t mode)
  */
 static void App_Robot_ExitMode(uint8_t mode)
 {
-    (void)mode;
+    if (mode == APP_MODE_COMP_AUTO_V)
+    {
+        App_Auto_Stop();
+    }
 
     App_Robot_RequestSafeState();
 }
@@ -98,7 +103,7 @@ void App_Robot_Update(void)
     switch (s_mode)
     {
         case APP_MODE_COMP_AUTO_V:
-            /* TODO: 将来改为 App_Auto_Update();  自动流程 A01~A07 推进 */
+            App_Auto_Update();
             break;
 
         case APP_MODE_COMP_MANUAL_V:
