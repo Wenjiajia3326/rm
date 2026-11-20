@@ -86,6 +86,15 @@ ArmAction_t App_Arm_GetAction(void);
 void App_Arm_Stop(void);
 
 /**
+ * @brief 查询机械臂是否在收纳位
+ * @return 1 = 收纳（可全速行驶）；0 = 伸出或位置不确定（限速）
+ * @note   按"最后完成的动作"约定推出来的，不是实测角度；
+ *         只用于互锁限速，不能当安全判据
+ */
+uint8_t App_Arm_IsStowed(void);
+
+
+/**
  * @brief 调试模式下选中一个关节
  * @param joint 关节编号（ARM_JOINT_BASE / ARM1 / ARM2 / GRIP）
  * @return 无
