@@ -135,6 +135,7 @@ void StartRobotTask(void *argument)
     uint8_t chassis_ready; // 启动结果：1表示准备成功，0表示失败。
     uint8_t mode;           // 本轮模式，避免重复读取。
     uint8_t drive_ok;       // 本周期是否允许底盘出力。
+    float drive_scale;      // 互锁限速比例，1.0 = 满速。
     ChassisSpeed manual_target; // 摇杆换算出的实际速度目标。
     uint32_t previous_ms; // 上一轮读取时间的时刻，单位毫秒。
     uint32_t current_ms; // 本轮读取时间的时刻，单位毫秒。
@@ -211,9 +212,31 @@ void StartRobotTask(void *argument)
         if ((drive_ok != 0U) &&
             ((mode == APP_MODE_COMP_MANUAL_V) || (mode == APP_MODE_CHASSIS_DEBUG_V)))
         {
-            manual_target.vx = (float)App_Remote_GetVx() * CHASSIS_MAX_LINEAR_MPS / 100.0f;
-            manual_target.vy = (float)App_Remote_GetVy() * CHASSIS_MAX_LINEAR_MPS / 100.0f;
-            manual_target.wz = (float)App_Remote_GetWz() * CHASSIS_MAX_ANGULAR_RPS / 100.0f;
+            // 互锁限速：收纳空载 100%，臂未收纳 50%，携块 70%，同时满足取小。
+            // 动作进行中已由 drive_ok 直接关掉，不在这里。
+            drive_scale = (float)CHASSIS_LIMIT_NORMAL_PCT / 100.0f;
+
+            if (App_Arm_IsStowed() == 0U)
+            {
+                drive_scale = (float)CHASSIS_LIMIT_ARM_OUT_PCT / 100.0f;
+            }
+
+            if ((App_Robot_GetLoad() == LOAD_CARRY_V) &&
+                (((float)CHASSIS_LIMIT_CARRY_PCT / 100.0f) < drive_scale))
+            {
+                drive_scale = (float)CHASSIS_LIMIT_CARRY_PCT / 100.0f;
+            }
+
+            // 地形档选"隧道"时压到 40%，由操作手在进隧道前切档
+            if ((App_Robot_GetTerrain() == TERRAIN_TUNNEL_V) &&
+                (((float)CHASSIS_LIMIT_TUNNEL_PCT / 100.0f) < drive_scale))
+            {
+                drive_scale = (float)CHASSIS_LIMIT_TUNNEL_PCT / 100.0f;
+            }
+
+            manual_target.vx = (float)App_Remote_GetVx() * CHASSIS_MAX_LINEAR_MPS * drive_scale / 100.0f;
+            manual_target.vy = (float)App_Remote_GetVy() * CHASSIS_MAX_LINEAR_MPS * drive_scale / 100.0f;
+            manual_target.wz = (float)App_Remote_GetWz() * CHASSIS_MAX_ANGULAR_RPS * drive_scale / 100.0f;
             (void)App_Chassis_SetTarget(&manual_target);
         }
 
