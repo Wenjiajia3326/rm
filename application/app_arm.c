@@ -303,7 +303,7 @@ void App_Arm_Set_Action(ArmAction_t action)
         return;
     }
 
-    /* 守卫：A/B/D 进入时为空载；C 进入时为携块 */
+    /* 守卫：A/B 要求空载；C 要求携块；D 收回不限载荷（携块也要收进隧道包络） */
     load = App_Robot_GetLoad();
 
     if (action == ARM_ACT_PLACE)
@@ -314,7 +314,7 @@ void App_Arm_Set_Action(ArmAction_t action)
             return;
         }
     }
-    else
+    else if (action != ARM_ACT_HOME)
     {
         if (load != LOAD_EMPTY_V)
         {
@@ -341,6 +341,27 @@ uint8_t App_Arm_IsBusy(void)
 ArmAction_t App_Arm_GetAction(void)
 {
     return s_action;
+}
+
+void App_Arm_Stop(void)
+{
+    uint8_t joint;
+
+    if (s_action != ARM_ACT_FREE)
+    {
+        LOG("arm stop: %s\r\n", App_Arm_ActionName(s_action));
+    }
+
+    s_action = ARM_ACT_FREE;
+    s_plan = 0;
+    s_step = 0U;
+    s_debug_acc = 0;
+
+    /* 停在当前位置：不读回角度，靠舵机自身的 PDST 保持 */
+    for (joint = 0U; joint < (uint8_t)ARM_JOINT_NUM; joint++)
+    {
+        Servo_Stop(s_servo_id[joint]);
+    }
 }
 
 void App_Arm_Debug_Select(ArmJoint_t joint)

@@ -61,7 +61,7 @@ void App_Arm_Update(void);
  * @param action 动作（ARM_ACT_READY / PICK / PLACE / HOME）
  * @return 无
  * @note   执行中收到新请求会被忽略（打日志）；
- *         A/B/D 要求进入时为空载，C 要求进入时为携块，不满足则拒绝
+ *         A/B 要求空载，C 要求携块，D 不限载荷，不满足则拒绝
  */
 void App_Arm_Set_Action(ArmAction_t action);
 
@@ -76,6 +76,14 @@ uint8_t App_Arm_IsBusy(void);
  * @return 当前动作，空闲为 ARM_ACT_FREE
  */
 ArmAction_t App_Arm_GetAction(void);
+
+/**
+ * @brief 立即停止机械臂：取消当前动作，4 个关节停在当前位置
+ * @param  无
+ * @return 无
+ * @note   急停、失联、切模式时调用；已发出的段不再继续，剩余段不再下发
+ */
+void App_Arm_Stop(void);
 
 /**
  * @brief 调试模式下选中一个关节

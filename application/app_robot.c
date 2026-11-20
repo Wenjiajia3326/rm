@@ -6,6 +6,7 @@
 
 #include "app_robot.h"
 #include "app_config.h"
+#include "app_arm.h"
 #include "app_auto.h"
 #include "app_chassis.h"    /* 安全态出口：停车 */
 #include "bsp_log.h"
@@ -26,14 +27,13 @@ static uint8_t s_load;
  * @brief 请求所有执行器进入安全状态
  * @param  无
  * @return 无
- * @note   底盘：取消自动任务并停车；机构：停发后续段、保持当前位置（未接）
+ * @note   底盘：取消自动任务并停车；机构：停在当前位置，剩余段不再下发
  * @note   切模式、链路丢失、急停都走这一个出口，避免多处写停车逻辑
  */
 static void App_Robot_RequestSafeState(void)
 {
     App_Chassis_RequestStop();
-
-    /* TODO: App_Arm_RequestHold(); */
+    App_Arm_Stop();
 }
 
 /**
