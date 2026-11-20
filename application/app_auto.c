@@ -71,8 +71,8 @@ static void App_Auto_StopCurrent(void)
     {
         case AUTO_STEP_LINE1:  App_Chassis_StopLine1();   break;
         case AUTO_STEP_LAP:    App_Chassis_StopLap();     break;
-        case AUTO_STEP_LINE2:  App_Chassis_StopLine2();   break;
         case AUTO_STEP_TUNNEL: App_Chassis_RequestStop(); break;
+        case AUTO_STEP_LINE2:  App_Chassis_StopLine2();   break;
         default: break;
     }
 }
@@ -101,6 +101,7 @@ static void App_Auto_EnterStep(AutoStep_t step)
     s_step = step;
     s_step_tick = HAL_GetTick();
 
+    /* 按枚举顺序排列；INIT 是起始状态，不是"进入"出来的，所以没有 case */
     switch (step)
     {
         case AUTO_STEP_LINE1:
@@ -119,6 +120,10 @@ static void App_Auto_EnterStep(AutoStep_t step)
             }
             break;
 
+        case AUTO_STEP_LIGHT:
+            s_yellow_ok = 0U;
+            break;
+
         case AUTO_STEP_TUNNEL:
             if (App_Chassis_PassTunnel(s_route) == 0U)
             {
@@ -133,10 +138,6 @@ static void App_Auto_EnterStep(AutoStep_t step)
                 App_Auto_Fail("start line2");
                 return;
             }
-            break;
-
-        case AUTO_STEP_LIGHT:
-            s_yellow_ok = 0U;
             break;
 
         case AUTO_STEP_PLACE:
@@ -180,11 +181,12 @@ void App_Auto_Init(void)
     App_Robot_SetLoad(LOAD_CARRY_V);
 }
 
-void App_Auto_Reset(void)
+void App_Auto_Stop(void)
 {
     App_Auto_StopCurrent();
     App_Chassis_RequestStop();
-    App_Auto_Init();
+
+    /* 只停任务，不复位状态：DONE/FAIL 保留到下次进入自动时再清 */
 }
 
 void App_Auto_Update(void)

@@ -41,11 +41,12 @@ void App_Auto_Init(void);
 void App_Auto_Update(void);
 
 /**
- * @brief 退出自动模式：停掉底盘任务并复位
+ * @brief 退出自动模式：停掉底盘任务
  * @param  无
  * @return 无
+ * @note   不复位状态，DONE/FAIL 保留到下一次 App_Auto_Init()
  */
-void App_Auto_Reset(void);
+void App_Auto_Stop(void);
 
 /**
  * @brief 取步骤名（日志用）
