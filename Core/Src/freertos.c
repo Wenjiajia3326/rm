@@ -44,6 +44,9 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+// 取较小值。参数会被求值两次，只传变量或常量。
+#define APP_MIN(a, b)   (((a) < (b)) ? (a) : (b))
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -218,20 +221,21 @@ void StartRobotTask(void *argument)
 
             if (App_Arm_IsStowed() == 0U)
             {
-                drive_scale = (float)CHASSIS_LIMIT_ARM_OUT_PCT / 100.0f;
+                drive_scale = APP_MIN(drive_scale,
+                                      (float)CHASSIS_LIMIT_ARM_OUT_PCT / 100.0f);
             }
 
-            if ((App_Robot_GetLoad() == LOAD_CARRY_V) &&
-                (((float)CHASSIS_LIMIT_CARRY_PCT / 100.0f) < drive_scale))
+            if (App_Robot_GetLoad() == LOAD_CARRY_V)
             {
-                drive_scale = (float)CHASSIS_LIMIT_CARRY_PCT / 100.0f;
+                drive_scale = APP_MIN(drive_scale,
+                                      (float)CHASSIS_LIMIT_CARRY_PCT / 100.0f);
             }
 
             // 地形档选"隧道"时压到 40%，由操作手在进隧道前切档
-            if ((App_Robot_GetTerrain() == TERRAIN_TUNNEL_V) &&
-                (((float)CHASSIS_LIMIT_TUNNEL_PCT / 100.0f) < drive_scale))
+            if (App_Robot_GetTerrain() == TERRAIN_TUNNEL_V)
             {
-                drive_scale = (float)CHASSIS_LIMIT_TUNNEL_PCT / 100.0f;
+                drive_scale = APP_MIN(drive_scale,
+                                      (float)CHASSIS_LIMIT_TUNNEL_PCT / 100.0f);
             }
 
             manual_target.vx = (float)App_Remote_GetVx() * CHASSIS_MAX_LINEAR_MPS * drive_scale / 100.0f;
