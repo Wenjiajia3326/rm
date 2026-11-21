@@ -356,6 +356,7 @@ uint8_t App_Arm_IsStowed(void)
     return s_arm_stowed;
 }
 
+
 void App_Arm_Stop(void)
 {
     uint8_t joint;
@@ -370,6 +371,7 @@ void App_Arm_Stop(void)
     s_plan = 0;
     s_step = 0U;
     s_debug_acc = 0;
+    s_debug_select_joint = (uint8_t)ARM_JOINT_NUM;   /* 停掉就取消选中，下次进调试要重新选 */
 
     /* 停在当前位置：不读回角度，靠舵机自身的 PDST 保持 */
     for (joint = 0U; joint < (uint8_t)ARM_JOINT_NUM; joint++)

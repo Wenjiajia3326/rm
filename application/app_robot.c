@@ -59,11 +59,13 @@ static void App_Robot_EnterMode(uint8_t mode)
             break;
 
         case APP_MODE_ARM_DEBUG_V:
-            /* TODO: 只允许机构动作，底盘禁行 */
+            /* 底盘禁行由 freertos.c 的 drive_ok 模式白名单强制；
+               动作键只在 COMP_MANUAL / ARM_DEBUG 生效，见 app_remote.c */
             break;
 
         case APP_MODE_CHASSIS_DEBUG_V:
-            /* TODO: 只允许底盘动作，机构保持 */
+            /* 机构动作由 app_remote.c 的 HandleArmKeys 门控挡住；
+               本模式只允许动底盘 */
             break;
 
         default:
