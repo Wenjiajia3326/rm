@@ -16,6 +16,9 @@ include("${CMAKE_CURRENT_LIST_DIR}/cmake/gcc-arm-none-eabi.cmake")
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 
 # Define the build type
@@ -30,11 +33,8 @@ set(CMAKE_PROJECT_NAME rm)
 # Enable compile command to ease indexing with e.g. clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
-# Enable CMake support for ASM and C languages
-enable_language(C ASM)
-
-# Core project settings
-project(${CMAKE_PROJECT_NAME})
+# 工程同时编译现有 C 代码、C++ 轮子类和汇编启动文件。
+project(${CMAKE_PROJECT_NAME} LANGUAGES C CXX ASM)
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
 # Create an executable object type
@@ -58,6 +58,7 @@ file(GLOB_RECURSE USER_SRCS CONFIGURE_DEPENDS
 )
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${USER_SRCS}
+    "${CMAKE_CURRENT_SOURCE_DIR}/components/wheel.cpp"
 )
 
 # Add include paths

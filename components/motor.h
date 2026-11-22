@@ -19,6 +19,11 @@ typedef struct
     uint8_t initialized;     ///< 0表示尚未建立起点，1表示已有上次计数。
 } MotorData;
 
+// 让 C++ 调用方使用 C 的链接名。
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// @brief 将编码器计数变化量换算成轮子角速度。
 /// @param delta_count 本次采样期间的有符号计数变化量，已处理计数回绕。
 /// @param counts_per_rev 轮子转一圈对应的计数，必须大于0。
@@ -62,5 +67,9 @@ MotorSampleResult Motor_Update(MotorData *motor,
                      uint32_t counts_per_rev,
                      float dt_s,
                      float *speed);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

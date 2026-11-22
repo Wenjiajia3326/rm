@@ -12,6 +12,11 @@ typedef struct
     float output_max;
 } PidData;
 
+// 让 C++ 调用方使用 C 的链接名。
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// @brief 设置PI参数、输出范围，并清零积分
 /// @param pid 需要初始化的PI数据，不能为NULL
 /// @param kp 比例系数，必须 >= 0
@@ -38,5 +43,9 @@ float Pid_Calc(PidData *pid, float target, float feedback, float dt_s);
 /// @brief 清除累计的积分，保留参数和输出限制
 /// @param pid 需要复位的PI数据，允许NULL（无操作）
 void Pid_Reset(PidData *pid);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
