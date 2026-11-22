@@ -1,17 +1,48 @@
-param([string]$Gcc = 'D:\msys64\mingw64\bin\gcc.exe')
+param(
+    [string]$Gcc = 'D:\msys64\mingw64\bin\gcc.exe',
+    [string]$Gpp
+)
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$testExe = Join-Path ([IO.Path]::GetTempPath()) ('rm_auto_flow_' + [Guid]::NewGuid().ToString('N') + '.exe')
+if (-not $Gpp)
+{
+    $Gpp = Join-Path (Split-Path -Parent (Get-Command $Gcc).Source) 'g++.exe'
+}
+$testDir = Join-Path ([IO.Path]::GetTempPath()) ('rm_auto_flow_' + [Guid]::NewGuid().ToString('N'))
+$testExe = Join-Path $testDir 'test_flow.exe'
+$null = New-Item -ItemType Directory -Path $testDir
+$objects = @()
 try
 {
-    $includes = @("-I$projectRoot\application", "-I$projectRoot\components", "-I$projectRoot\bsp")
-    $sources = @('motor', 'pid', 'ramp', 'mecanum') | ForEach-Object { Join-Path $projectRoot "components\$_.c" }
-    & $Gcc -std=c11 -Wall -Wextra -Werror @includes (Join-Path $PSScriptRoot 'test_flow.c') @sources -lm -o $testExe
-    if ($LASTEXITCODE -ne 0) { throw 'Host test compile failed' }
+    $flags = @('-Wall', '-Wextra', '-Werror', "-I$projectRoot\application", "-I$projectRoot\components", "-I$projectRoot\bsp")
+    $cSources = @((Join-Path $PSScriptRoot 'test_flow.c')) + @('motor', 'pid', 'ramp', 'mecanum' | ForEach-Object { Join-Path $projectRoot "components\$_.c" })
+    $cppSources = @((Join-Path $projectRoot 'components\wheel.cpp'), (Join-Path $projectRoot 'application\app_chassis_wheels.cpp'))
+
+    # 各自按 C 和 C++ 编译，最后用 C++ 编译器链接到同一个程序。
+    foreach ($source in ($cSources + $cppSources))
+    {
+        $object = Join-Path $testDir ([IO.Path]::GetFileName($source) + '.o')
+        $objects += $object
+        if ($source.EndsWith('.cpp'))
+        {
+            & $Gpp -std=c++11 @flags -c $source -o $object
+        }
+        else
+        {
+            & $Gcc -std=c11 @flags -c $source -o $object
+        }
+        if ($LASTEXITCODE -ne 0) { throw "Host test compile failed: $source" }
+    }
+    & $Gpp @objects -lm -o $testExe
+    if ($LASTEXITCODE -ne 0) { throw 'Host test link failed' }
     & $testExe
     if ($LASTEXITCODE -ne 0) { throw 'Host flow test failed' }
 }
 finally
 {
-    if (Test-Path -LiteralPath $testExe) { Remove-Item -LiteralPath $testExe }
+    foreach ($file in ($objects + $testExe))
+    {
+        if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
+    }
+    Remove-Item -LiteralPath $testDir
 }

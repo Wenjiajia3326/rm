@@ -64,8 +64,41 @@ static void prepare(void)
     line_result = LINE_TARGET_READY;
     action_ready = TRACK_YES;
 }
+static void test_wheel_control(void)
+{
+    ChassisEncoder count = {100U, 200U, 300U, 400U};
+    ChassisOutput output;
+    const float dt_s = 0.125f;
+
+    App_Chassis_Init();
+    assert(App_Chassis_Init_PI(0.0f, 2.0f, 100.0f, -1000.0f, 1000.0f));
+    assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_READY);
+    assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_VALID);
+
+    // 只让左前轮积累误差，其他三轮的积分应保持为零。
+    wheel_target.front_left = 4.0f;
+    assert(App_Chassis_Calc_Output(dt_s, &output));
+    assert(output.front_left == 1.0f);
+    assert(output.front_right == 0.0f && output.rear_left == 0.0f && output.rear_right == 0.0f);
+    assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_VALID);
+    assert(App_Chassis_Calc_Output(dt_s, &output) && output.front_left == 2.0f);
+    App_Chassis_Stop(&output);
+    assert(output.front_left == 0.0f);
+    wheel_target.front_left = 4.0f;
+    assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_VALID);
+    assert(App_Chassis_Calc_Output(dt_s, &output) && output.front_left == 1.0f);
+
+    // 漏采样时清除旧起点；恢复后的第一拍只记数，第二拍才能算轮速。
+    assert(App_Chassis_Update_Feedback(NULL, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_ERROR);
+    count.front_left += 20U;
+    assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_READY);
+    assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_VALID);
+    assert(wheel_feedback.front_left == 0.0f);
+}
+
 int main(void)
 {
+    test_wheel_control();
     ChassisSpeed target;
     TrackInput t = {0};
     // 路线测试：当前只填写已确认的入口选路动作。
@@ -184,6 +217,6 @@ int main(void)
     assert(!chassis_light_valid && nonzero_outputs == 0);
     output_fail = 1; App_Chassis_Run(&map,1,0.01f);
     assert(chassis_status == CHASSIS_STATUS_FAULT);
-    puts("PASS: routes, gaps, lap, tunnel, handoff, cancellation, disable, stop and light consumption");
+    puts("PASS: wheel control, routes, gaps, lap, tunnel, handoff, cancellation, disable, stop and light consumption");
     return 0;
 }

@@ -1,9 +1,8 @@
 // 保存底盘目标，后续在本模块组织周期控制。
 #include "app_chassis.h"
+#include "app_chassis_wheels.h"
 #include "ramp.h"
 #include <stddef.h>
-#include "motor.h"
-#include "pid.h"
 #include "app_config.h"
 #include <math.h>
 #include "app_line.h"
@@ -43,20 +42,6 @@ static ChassisSpeed chassis_target = {0};
 static ChassisSpeed chassis_ramp = {0};
 // 保存解算并限速后的四轮目标，供后续四轮速度PI使用。
 static WheelSpeed wheel_target = {0};
-
-// 内部轮序固定为左前、右前、左后、右后，不等同于电路板接口编号。
-typedef enum
-{
-    WHEEL_FRONT_LEFT = 0,
-    WHEEL_FRONT_RIGHT,
-    WHEEL_REAR_LEFT,
-    WHEEL_REAR_RIGHT,
-    WHEEL_COUNT
-} WheelId;
-
-// 每个轮子独立保存测速历史和PI积分。
-static MotorData motor[WHEEL_COUNT] = {0};
-static PidData pid[WHEEL_COUNT] = {0};
 
 // 保存完整四轮反馈；有效反馈只允许使用一次。
 static WheelSpeed wheel_feedback = {0};
@@ -130,7 +115,7 @@ void App_Chassis_Init(void)
     // 重新初始化后，四轮都需要重新建立计数起点。
     for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
     {
-        motor[wheel_index].initialized = 0;
+        Chassis_Wheel_ResetSpeed(wheel_index);
     }
 
     wheel_feedback.front_left = 0.0f;
@@ -143,7 +128,7 @@ void App_Chassis_Init(void)
     chassis_pi_ready = 0;
     for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
     {
-        Pid_Reset(&pid[wheel_index]);
+        Chassis_Wheel_ResetPI(wheel_index);
     }
 }
 
@@ -381,7 +366,7 @@ MotorSampleResult App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
     {
         for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
         {
-            motor[wheel_index].initialized = 0;
+            Chassis_Wheel_ResetSpeed(wheel_index);
         }
         return MOTOR_SAMPLE_ERROR;
     }
@@ -395,9 +380,9 @@ MotorSampleResult App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
     for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
     {
         // 一路异常也继续更新其他轮，分别统计异常和正常准备。
-        result = Motor_Update(&motor[wheel_index], current[wheel_index],
-                              count_range, counts_per_rev, dt_s,
-                              &next_speed[wheel_index]);
+        result = Chassis_Wheel_UpdateSpeed(wheel_index, current[wheel_index],
+                                           count_range, counts_per_rev, dt_s,
+                                           &next_speed[wheel_index]);
         if (result == MOTOR_SAMPLE_ERROR)
         {
             error_count++;
@@ -440,8 +425,8 @@ uint8_t App_Chassis_Init_PI(float kp,
     chassis_pi_ready = 0;
     for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
     {
-        valid_count += Pid_Init(&pid[wheel_index], kp, ki, integral_max,
-                                output_min, output_max);
+        valid_count += Chassis_Wheel_InitPI(wheel_index, kp, ki, integral_max,
+                                           output_min, output_max);
     }
     if (valid_count != WHEEL_COUNT)
     {
@@ -472,7 +457,7 @@ uint8_t App_Chassis_Calc_Output(float dt_s,
         wheel_feedback_valid = 0;
         for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
         {
-            Pid_Reset(&pid[wheel_index]);
+            Chassis_Wheel_ResetPI(wheel_index);
         }
         return 0;
     }
@@ -481,26 +466,26 @@ uint8_t App_Chassis_Calc_Output(float dt_s,
     wheel_feedback_valid = 0;
 
     // 每个轮子使用自己的PI、目标和反馈，积分互不影响。
-    output->front_left = Pid_Calc(
-        &pid[WHEEL_FRONT_LEFT],
+    output->front_left = Chassis_Wheel_CalcOutput(
+        WHEEL_FRONT_LEFT,
         wheel_target.front_left,
         wheel_feedback.front_left,
         dt_s);
 
-    output->front_right = Pid_Calc(
-        &pid[WHEEL_FRONT_RIGHT],
+    output->front_right = Chassis_Wheel_CalcOutput(
+        WHEEL_FRONT_RIGHT,
         wheel_target.front_right,
         wheel_feedback.front_right,
         dt_s);
 
-    output->rear_left = Pid_Calc(
-        &pid[WHEEL_REAR_LEFT],
+    output->rear_left = Chassis_Wheel_CalcOutput(
+        WHEEL_REAR_LEFT,
         wheel_target.rear_left,
         wheel_feedback.rear_left,
         dt_s);
 
-    output->rear_right = Pid_Calc(
-        &pid[WHEEL_REAR_RIGHT],
+    output->rear_right = Chassis_Wheel_CalcOutput(
+        WHEEL_REAR_RIGHT,
         wheel_target.rear_right,
         wheel_feedback.rear_right,
         dt_s);
@@ -520,7 +505,7 @@ void App_Chassis_Stop(ChassisOutput *output)
     // 清除历史积分，保留已配置的PI参数和就绪状态。
     for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
     {
-        Pid_Reset(&pid[wheel_index]);
+        Chassis_Wheel_ResetPI(wheel_index);
     }
 
     // 停止前的反馈不可再用于计算；编码器仍应继续周期采样。
@@ -578,7 +563,7 @@ uint8_t App_Chassis_Update(const ChassisConfig *config,
         wheel_target = (WheelSpeed){0};
         for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
         {
-            Pid_Reset(&pid[wheel_index]);
+            Chassis_Wheel_ResetPI(wheel_index);
         }
         *output = (ChassisOutput){0};
         return 0;

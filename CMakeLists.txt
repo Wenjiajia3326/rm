@@ -59,6 +59,7 @@ file(GLOB_RECURSE USER_SRCS CONFIGURE_DEPENDS
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${USER_SRCS}
     "${CMAKE_CURRENT_SOURCE_DIR}/components/wheel.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/application/app_chassis_wheels.cpp"
 )
 
 # Add include paths
