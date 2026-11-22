@@ -77,8 +77,8 @@
 /* btn_low：动作键 + 旋转键（位定义） */
 #define RC_BTN_ARM_READY                0x01U   ///< A 伸臂准备（回收纳位→伸出）
 #define RC_BTN_ARM_PICK                 0x02U   ///< B 夹紧并抬起
-#define RC_BTN_ARM_PLACE                0x04U   ///< C 下降+松开+后撤
-#define RC_BTN_ARM_HOME                 0x08U   ///< D 收回
+#define RC_BTN_ARM_HOME                 0x04U   ///< C 收回（丝印 C，收到收纳位）
+#define RC_BTN_ARM_PLACE                0x08U   ///< D 放置（丝印 D，下降+松开+后撤）
 #define RC_BTN_ROT_FAST_LEFT            0x10U   ///< 快速左旋（按住）；调试模式：选关节 1（底座）
 #define RC_BTN_ROT_FAST_RIGHT           0x20U   ///< 快速右旋（按住）；调试模式：选关节 2（下臂）
 #define RC_BTN_ROT_SLOW_LEFT            0x40U   ///< 精细左旋（按住）；调试模式：选关节 3（上臂）
