@@ -10,6 +10,8 @@
 
 #include "app_selftest.h"
 #include "app_config.h"
+#include "app_arm.h"
+#include "app_remote.h"
 #include "app_robot.h"
 #include "crc8.h"
 #include "remote_protocol.h"
@@ -80,6 +82,20 @@ static const uint8_t s_rc_9[] = { 0xAA, 0x55, 0x02, 0x20, 0x09, 0x00, 0x00, 0x00
 
 /** seq 回绕示例（seq=0xFF） */
 static const uint8_t s_rc_10[] = { 0xAA, 0x55, 0x02, 0x20, 0x09, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0xFF, 0x45 };
+
+/* ---- 模式门控用例：同样的 A 键，在不同 mode 下应/不应触发 ---- */
+
+/** INIT 模式 + A 键按下（mode=0, low.bit0） */
+static const uint8_t s_rc_init_a[] = { 0xAA, 0x55, 0x02, 0x20, 0x09, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xAA };
+
+/** INIT 模式 + 松开（用于制造下次按下沿） */
+static const uint8_t s_rc_init_up[] = { 0xAA, 0x55, 0x02, 0x20, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x7C };
+
+/** 比赛手动 + A 键按下（mode=2, low.bit0） */
+static const uint8_t s_rc_man_a[] = { 0xAA, 0x55, 0x02, 0x20, 0x09, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x60 };
+
+/** 比赛手动 + 松开 */
+static const uint8_t s_rc_man_up[] = { 0xAA, 0x55, 0x02, 0x20, 0x09, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x04, 0xAA };
 
 /** 反例：CRC 坏，必须丢弃 */
 static const uint8_t s_rc_bad[] = { 0xAA, 0x55, 0x02, 0x20, 0x09, 0x32, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0xEB };
@@ -315,6 +331,88 @@ static void App_Selftest_Robot(void)
     App_Selftest_Report("robot mode name", ok);
 }
 
+/**
+ * @brief 校验机械臂动作守卫与停止
+ * @param  无
+ * @return 无
+ * @note   A/B 要求空载、C 要求携块、D 不限载荷；执行中忽略新请求；Stop 清动作
+ */
+static void App_Selftest_ArmGuard(void)
+{
+    uint8_t ok;
+
+    App_Robot_Init();
+    App_Arm_Init();
+
+    /* A 伸臂：要求空载，携块应被拒 */
+    App_Robot_SetLoad(LOAD_CARRY_V);
+    App_Arm_Set_Action(ARM_ACT_READY);
+    App_Selftest_Report("arm A needs empty", (App_Arm_IsBusy() == 0U) ? 1U : 0U);
+
+    /* C 放置：要求携块，空载应被拒 */
+    App_Robot_SetLoad(LOAD_EMPTY_V);
+    App_Arm_Set_Action(ARM_ACT_PLACE);
+    App_Selftest_Report("arm C needs block", (App_Arm_IsBusy() == 0U) ? 1U : 0U);
+
+    /* C 携块：接受 */
+    App_Robot_SetLoad(LOAD_CARRY_V);
+    App_Arm_Set_Action(ARM_ACT_PLACE);
+    App_Selftest_Report("arm C accepts block", (App_Arm_IsBusy() != 0U) ? 1U : 0U);
+
+    /* 执行中再来一个请求：忽略，原动作不变 */
+    App_Arm_Set_Action(ARM_ACT_PICK);
+    ok = (uint8_t)((App_Arm_IsBusy() != 0U) && (App_Arm_GetAction() == ARM_ACT_PLACE));
+    App_Selftest_Report("arm busy ignores new", ok);
+
+    /* Stop：清动作，且不再算收纳 */
+    App_Arm_Stop();
+    ok = (uint8_t)((App_Arm_IsBusy() == 0U) && (App_Arm_IsStowed() == 0U));
+    App_Selftest_Report("arm stop clears", ok);
+
+    /* D 收回：不限载荷，携块也能进 */
+    App_Robot_SetLoad(LOAD_CARRY_V);
+    App_Arm_Set_Action(ARM_ACT_HOME);
+    App_Selftest_Report("arm D any load", (App_Arm_IsBusy() != 0U) ? 1U : 0U);
+
+    App_Arm_Stop();
+    App_Robot_Init();
+}
+
+/**
+ * @brief 校验 A/B/C/D 的模式门控
+ * @param  无
+ * @return 无
+ * @note   同样的 A 键，INIT 下不应触发，比赛手动下应触发
+ */
+static void App_Selftest_ModeGate(void)
+{
+    App_Robot_Init();
+    App_Arm_Init();
+    App_Remote_Init();
+    App_Robot_SetLoad(LOAD_EMPTY_V);
+
+    /* INIT 模式按 A：不应触发 */
+    BSP_Uart_TestInject(BSP_UART_REMOTE, s_rc_init_a, sizeof(s_rc_init_a));
+    App_Remote_Update();
+    App_Selftest_Report("gate INIT ignores A", (App_Arm_IsBusy() == 0U) ? 1U : 0U);
+
+    /* 松开，制造下一次按下沿 */
+    BSP_Uart_TestInject(BSP_UART_REMOTE, s_rc_init_up, sizeof(s_rc_init_up));
+    App_Remote_Update();
+
+    /* 比赛手动按 A：应触发 */
+    BSP_Uart_TestInject(BSP_UART_REMOTE, s_rc_man_a, sizeof(s_rc_man_a));
+    App_Remote_Update();
+    App_Selftest_Report("gate manual accepts A", (App_Arm_IsBusy() != 0U) ? 1U : 0U);
+
+    /* 清场 */
+    App_Arm_Stop();
+    BSP_Uart_TestInject(BSP_UART_REMOTE, s_rc_man_up, sizeof(s_rc_man_up));
+    App_Remote_Update();
+    BSP_Uart_TestInject(BSP_UART_REMOTE, 0, 0U);
+    App_Robot_Init();
+}
+
 uint8_t App_Selftest_Run(void)
 {
     s_pass = 0U;
@@ -326,6 +424,8 @@ uint8_t App_Selftest_Run(void)
     App_Selftest_Remote();
     App_Selftest_Vision();
     App_Selftest_Robot();
+    App_Selftest_ArmGuard();
+    App_Selftest_ModeGate();
 
     LOG("---- selftest: %u pass, %u fail ----\r\n", s_pass, s_fail);
 

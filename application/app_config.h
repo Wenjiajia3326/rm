@@ -88,6 +88,9 @@
 #define RC_BTN_FINE_MODE                0x01U   ///< 精细/修正切换（即时生效）；调试模式：粗调/细调
 #define RC_BTN_ESTOP                    0x02U   ///< 急停（软件备份，硬件急停独立）
 
+/* ===================== 自动流程（owner：电控B） ===================== */
+#define APP_AUTO_LAP_ENABLE             1       ///< 自动阶段是否绕圈：1=绕 / 0=不绕
+
 /* ===================== 四、模式与档位取值（owner：电控B，与协议 V1.3 字段一致） ===================== */
 #define APP_MODE_INIT_V                 0U      ///< 初始 / 待命
 #define APP_MODE_COMP_AUTO_V            1U      ///< 比赛-自动
@@ -97,13 +100,14 @@
 
 #define TERRAIN_ROAD_V                  0U      ///< 平路
 #define TERRAIN_BUMP_V                  1U      ///< 颠簸
+#define TERRAIN_TUNNEL_V                2U      ///< 隧道（手动过隧道时压到 40%）
 
 #define LOAD_EMPTY_V                    0U      ///< 空载
 #define LOAD_CARRY_V                    1U      ///< 携块
 
 /* ---- 数量：仅用于数组长度与边界检查，不对应任何取值 ---- */
 #define APP_MODE_NUM                    5U      ///< 模式数量
-#define TERRAIN_NUM                     2U      ///< 地形档数量（电控A 确认后调整）
+#define TERRAIN_NUM                     3U      ///< 地形档数量（平路/颠簸/隧道）
 #define LEVEL_NUM                       3U      ///< 高度档数量（机械B 标定后调整）
 
 /* ===================== 五、舵机（owner：电控B，数值待机械B 标定） ===================== */

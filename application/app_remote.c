@@ -254,7 +254,11 @@ static void App_Remote_HandleFrame(const RemoteData_t *data)
     App_Robot_ApplyMode(data->mode);
     App_Robot_SetTerrain(data->terrain);
     App_Robot_SetLevel(data->level);
-    App_Robot_SetLoad(data->load);
+    /* 自动阶段载荷由流程维护：开局携块，放置完成后自动置空载 */
+    if (App_Robot_GetMode() != APP_MODE_COMP_AUTO_V)
+    {
+        App_Robot_SetLoad(data->load);
+    }
 
     /* 摇杆与旋转 */
     App_Remote_ApplyStick(data->vx, data->vy);
