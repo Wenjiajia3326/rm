@@ -1,7 +1,7 @@
-// 保存底盘目标，后续在本模块组织周期控制。
+// 底盘状态机：管理任务、交接和停车，调度运动控制与硬件读写。
 #include "app_chassis.h"
-#include "app_chassis_wheels.h"
-#include "ramp.h"
+#include "app_chassis_io.h"
+#include "app_chassis_control.h"
 #include <stddef.h>
 #include "app_config.h"
 #include <math.h>
@@ -35,21 +35,6 @@ static uint8_t chassis_task_done = 0U;
 // 当前底盘状态，由本模块管理，其他模块通过查询函数读取。
 static ChassisStatus chassis_status = CHASSIS_STATUS_NOT_READY;
 
-// 本模块保存的整车速度目标，只允许通过接口修改。
-static ChassisSpeed chassis_target = {0};
-
-// 上次斜坡处理后的目标，下一次更新从这里继续。
-static ChassisSpeed chassis_ramp = {0};
-// 保存解算并限速后的四轮目标，供后续四轮速度PI使用。
-static WheelSpeed wheel_target = {0};
-
-// 保存完整四轮反馈；有效反馈只允许使用一次。
-static WheelSpeed wheel_feedback = {0};
-static uint8_t wheel_feedback_valid = 0;
-
-// 四轮PI全部配置成功后才置1；后续控制计算须先检查此标志。
-static uint8_t chassis_pi_ready = 0;
-
 // 底盘控制配置：具体参数来自app_config.h。
 // 计数范围由后续硬件初始化流程填写，目前0表示尚未准备好。
 static ChassisConfig chassis_config =
@@ -79,8 +64,6 @@ ChassisStatus App_Chassis_GetStatus(void)
 }
 void App_Chassis_Init(void)
 {
-    uint8_t wheel_index;
-
     // 软件状态被重新初始化后，须重新完成启动流程。
     chassis_status = CHASSIS_STATUS_NOT_READY;
 
@@ -100,36 +83,7 @@ void App_Chassis_Init(void)
     // 初始化或接收新任务时，清除上一次的计数与确认标记。
     App_Line_Reset();
 
-    chassis_target.vx = 0.0f;
-    chassis_target.vy = 0.0f;
-    chassis_target.wz = 0.0f;
-
-    chassis_ramp.vx = 0.0f;
-    chassis_ramp.vy = 0.0f;
-    chassis_ramp.wz = 0.0f;
-
-    wheel_target.front_left = 0.0f;
-    wheel_target.front_right = 0.0f;
-    wheel_target.rear_left = 0.0f;
-    wheel_target.rear_right = 0.0f;
-    // 重新初始化后，四轮都需要重新建立计数起点。
-    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
-    {
-        Chassis_Wheel_ResetSpeed(wheel_index);
-    }
-
-    wheel_feedback.front_left = 0.0f;
-    wheel_feedback.front_right = 0.0f;
-    wheel_feedback.rear_left = 0.0f;
-    wheel_feedback.rear_right = 0.0f;
-
-    wheel_feedback_valid = 0;
-    // 底盘重新初始化后，清除旧积分，并要求重新配置四轮PI。
-    chassis_pi_ready = 0;
-    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
-    {
-        Chassis_Wheel_ResetPI(wheel_index);
-    }
+    Chassis_Control_Init();
 }
 
 uint8_t App_Chassis_SetTarget(const ChassisSpeed *target)
@@ -155,7 +109,7 @@ uint8_t App_Chassis_SetTarget(const ChassisSpeed *target)
     }
 
     // 复制三个速度值，不保存调用者的指针。
-    chassis_target = *target;
+    Chassis_Control_SetTarget(*target);
     return 1;
 }
 // 清除各任务进度和交接记录；四轮比例积分控制与编码器采样仍由底盘控制流程管理。
@@ -191,7 +145,7 @@ static uint8_t App_Chassis_Start_Task(ChassisTask task, uint8_t route)
     App_Chassis_Reset_Task();
     if (handoff == 0U)
     {
-        chassis_target = (ChassisSpeed){0};
+        Chassis_Control_SetTarget((ChassisSpeed){0});
     }
     chassis_task = task;
     switch (task)
@@ -238,7 +192,7 @@ void App_Chassis_RequestStop(void)
     chassis_stop_auto = chassis_task != CHASSIS_TASK_NONE;
     App_Chassis_Reset_Task();
     chassis_task = CHASSIS_TASK_NONE;
-    chassis_target = (ChassisSpeed){0};
+    Chassis_Control_SetTarget((ChassisSpeed){0});
     if (chassis_status != CHASSIS_STATUS_FAULT &&
         chassis_status != CHASSIS_STATUS_NOT_READY &&
         chassis_status != CHASSIS_STATUS_STOPPING)
@@ -294,364 +248,21 @@ uint8_t App_Chassis_SetLight(uint8_t color, uint8_t valid)
     return 1U;
 }
 
-uint8_t App_Chassis_Update_Ramp(const ChassisRampConfig *config,
-                               float dt_s)
-{
-    // || 从左向右判断，空指针时不会继续读取配置成员。
-    if (config == NULL ||
-        config->linear_accel <= 0.0f ||
-        config->linear_decel <= 0.0f ||
-        config->angular_accel <= 0.0f ||
-        config->angular_decel <= 0.0f ||
-        dt_s <= 0.0f)
-    {
-        return 0;
-    }
-
-    chassis_ramp.vx = Ramp_Update(chassis_ramp.vx,
-                                 chassis_target.vx,
-                                 config->linear_accel,
-                                 config->linear_decel,
-                                 dt_s);
-
-    chassis_ramp.vy = Ramp_Update(chassis_ramp.vy,
-                                 chassis_target.vy,
-                                 config->linear_accel,
-                                 config->linear_decel,
-                                 dt_s);
-
-    chassis_ramp.wz = Ramp_Update(chassis_ramp.wz,
-                                 chassis_target.wz,
-                                 config->angular_accel,
-                                 config->angular_decel,
-                                 dt_s);
-
-    return 1;
-}
-uint8_t App_Chassis_Update_Wheel(const MecanumConfig *config,
-                                float max_speed)
-{
-    WheelSpeed next_target;
-
-    if (Mecanum_Calc(config, &chassis_ramp, &next_target) == 0)
-    {
-        return 0;
-    }
-
-    if (Mecanum_Limit(&next_target, max_speed) == 0)
-    {
-        return 0;
-    }
-
-    wheel_target = next_target;
-    return 1;
-}
-
-MotorSampleResult App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
-                                   uint32_t count_range,
-                                   uint32_t counts_per_rev,
-                                   float dt_s)
-{
-    uint8_t wheel_index;
-    uint8_t error_count = 0U;
-    uint8_t ready_count = 0U;
-    float next_speed[WHEEL_COUNT];
-    uint16_t current[WHEEL_COUNT];
-    MotorSampleResult result;
-
-    // 旧轮速不可作为本次反馈使用。
-    wheel_feedback_valid = 0;
-
-    if (encoder == NULL)
-    {
-        for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
-        {
-            Chassis_Wheel_ResetSpeed(wheel_index);
-        }
-        return MOTOR_SAMPLE_ERROR;
-    }
-
-    // 明确轮位映射，不把结构体强转成数组。
-    current[WHEEL_FRONT_LEFT] = encoder->front_left;
-    current[WHEEL_FRONT_RIGHT] = encoder->front_right;
-    current[WHEEL_REAR_LEFT] = encoder->rear_left;
-    current[WHEEL_REAR_RIGHT] = encoder->rear_right;
-
-    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
-    {
-        // 一路异常也继续更新其他轮，分别统计异常和正常准备。
-        result = Chassis_Wheel_UpdateSpeed(wheel_index, current[wheel_index],
-                                           count_range, counts_per_rev, dt_s,
-                                           &next_speed[wheel_index]);
-        if (result == MOTOR_SAMPLE_ERROR)
-        {
-            error_count++;
-        }
-        else if (result == MOTOR_SAMPLE_READY)
-        {
-            ready_count++;
-        }
-    }
-
-    // 异常优先，不能把某轮异常当作其他轮的正常准备。
-    if (error_count != 0U)
-    {
-        return MOTOR_SAMPLE_ERROR;
-    }
-    if (ready_count != 0U)
-    {
-        return MOTOR_SAMPLE_READY;
-    }
-
-    // 只有四轮均有效，才读取临时轮速并提交完整反馈。
-    wheel_feedback.front_left = next_speed[WHEEL_FRONT_LEFT];
-    wheel_feedback.front_right = next_speed[WHEEL_FRONT_RIGHT];
-    wheel_feedback.rear_left = next_speed[WHEEL_REAR_LEFT];
-    wheel_feedback.rear_right = next_speed[WHEEL_REAR_RIGHT];
-    wheel_feedback_valid = 1;
-    return MOTOR_SAMPLE_VALID;
-}
-
-uint8_t App_Chassis_Init_PI(float kp,
-                           float ki,
-                           float integral_max,
-                           float output_min,
-                           float output_max)
-{
-    uint8_t valid_count = 0U;
-    uint8_t wheel_index;
-
-    // 每轮参数可以相同，但积分记录独立。全部成功才允许计算。
-    chassis_pi_ready = 0;
-    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
-    {
-        valid_count += Chassis_Wheel_InitPI(wheel_index, kp, ki, integral_max,
-                                           output_min, output_max);
-    }
-    if (valid_count != WHEEL_COUNT)
-    {
-        return 0;
-    }
-
-    chassis_pi_ready = 1;
-    return 1;
-}
-uint8_t App_Chassis_Calc_Output(float dt_s,
-                               ChassisOutput *output)
-{
-    uint8_t wheel_index;
-
-    if (output == NULL)
-    {
-        return 0;
-    }
-
-    // 先给出零请求，条件不满足时不会把调用者的旧请求留下来。
-    *output = (ChassisOutput){0};
-
-    if (chassis_pi_ready == 0 ||
-        wheel_feedback_valid == 0 ||
-        dt_s <= 0.0f)
-    {
-        // 本次计算条件无效，取消旧反馈资格，恢复后必须重新采样。
-        wheel_feedback_valid = 0;
-        for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
-        {
-            Chassis_Wheel_ResetPI(wheel_index);
-        }
-        return 0;
-    }
-
-    // 本次反馈只使用一次，下一次计算前必须重新更新测速。
-    wheel_feedback_valid = 0;
-
-    // 每个轮子使用自己的PI、目标和反馈，积分互不影响。
-    output->front_left = Chassis_Wheel_CalcOutput(
-        WHEEL_FRONT_LEFT,
-        wheel_target.front_left,
-        wheel_feedback.front_left,
-        dt_s);
-
-    output->front_right = Chassis_Wheel_CalcOutput(
-        WHEEL_FRONT_RIGHT,
-        wheel_target.front_right,
-        wheel_feedback.front_right,
-        dt_s);
-
-    output->rear_left = Chassis_Wheel_CalcOutput(
-        WHEEL_REAR_LEFT,
-        wheel_target.rear_left,
-        wheel_feedback.rear_left,
-        dt_s);
-
-    output->rear_right = Chassis_Wheel_CalcOutput(
-        WHEEL_REAR_RIGHT,
-        wheel_target.rear_right,
-        wheel_feedback.rear_right,
-        dt_s);
-
-    return 1;
-}
-
-void App_Chassis_Stop(ChassisOutput *output)
-{
-    uint8_t wheel_index;
-
-    // 清除旧命令，避免下一周期继续追踪停止前的目标。
-    chassis_target = (ChassisSpeed){0};
-    chassis_ramp = (ChassisSpeed){0};
-    wheel_target = (WheelSpeed){0};
-
-    // 清除历史积分，保留已配置的PI参数和就绪状态。
-    for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
-    {
-        Chassis_Wheel_ResetPI(wheel_index);
-    }
-
-    // 停止前的反馈不可再用于计算；编码器仍应继续周期采样。
-    wheel_feedback_valid = 0;
-
-    // 非空时将调用者的四轮请求一并清零；本函数不直接操作电机。
-    if (output != NULL)
-    {
-        *output = (ChassisOutput){0};
-    }
-}
-
 uint8_t App_Chassis_Update(const ChassisConfig *config,
                            const ChassisEncoder *encoder,
                            uint8_t enabled,
                            float dt_s,
                            ChassisOutput *output)
 {
-    MotorSampleResult feedback_result;
-    uint8_t wheel_index;
-
-    if (config == NULL)
+    ChassisControlResult result = Chassis_Control_Update(config, encoder,
+                                                       enabled, dt_s, output);
+    if (result == CHASSIS_CONTROL_ENCODER_ERROR && chassis_task != CHASSIS_TASK_NONE)
     {
-        // 无法按配置更新测速，取消旧计数起点，避免下次跨周期误算。
-        App_Chassis_Update_Feedback(NULL, 0, 0, dt_s);
-        App_Chassis_Stop(output);
-        return 0;
+        chassis_status = CHASSIS_STATUS_FAULT;
     }
-
-    // 先测速，即使禁止运行，也保持编码器采样连续。
-    feedback_result = App_Chassis_Update_Feedback(
-        encoder,
-        config->count_range,
-        config->counts_per_rev,
-        dt_s);
-
-    if (output == NULL ||
-        enabled == 0 ||
-        feedback_result == MOTOR_SAMPLE_ERROR)
-    {
-        App_Chassis_Stop(output);
-        if (enabled != 0U && feedback_result == MOTOR_SAMPLE_ERROR &&
-            chassis_task != CHASSIS_TASK_NONE)
-        {
-            chassis_status = CHASSIS_STATUS_FAULT;
-        }
-        return 0;
-    }
-
-    if (feedback_result == MOTOR_SAMPLE_READY)
-    {
-        // 正常准备测速：不输出驱动力，但保留已接受的整车目标。
-        // 平滑目标从零重新起步，避免恢复时沿用旧斜坡状态。
-        chassis_ramp = (ChassisSpeed){0};
-        wheel_target = (WheelSpeed){0};
-        for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
-        {
-            Chassis_Wheel_ResetPI(wheel_index);
-        }
-        *output = (ChassisOutput){0};
-        return 0;
-    }
-
-    // 先平滑整车目标，再换算为四个轮子的目标。
-    if (App_Chassis_Update_Ramp(&config->ramp, dt_s) == 0 ||
-        App_Chassis_Update_Wheel(
-            &config->mecanum, config->max_wheel_speed) == 0)
-    {
-        App_Chassis_Stop(output);
-        return 0;
-    }
-
-    // 目标和反馈都准备好后，才允许计算驱动请求。
-    if (App_Chassis_Calc_Output(dt_s, output) == 0)
-    {
-        App_Chassis_Stop(output);
-        return 0;
-    }
-
-    return 1;
+    return result == CHASSIS_CONTROL_OK;
 }
-uint8_t App_Chassis_Read_Encoder(const ChassisMotorMap *map,
-                                ChassisEncoder *encoder)//读取编码器的量
-{
-    ChassisEncoder next_encoder;
 
-    if (map == NULL || encoder == NULL)
-    {
-        return 0;
-    }
-
-    // 先读取到局部变量，避免失败时只更新一部分轮子的计数。
-    if (BSP_Motor_Read_Count(map->front_left,
-                            &next_encoder.front_left) == 0 ||
-        BSP_Motor_Read_Count(map->front_right,
-                            &next_encoder.front_right) == 0 ||
-        BSP_Motor_Read_Count(map->rear_left,
-                            &next_encoder.rear_left) == 0 ||
-        BSP_Motor_Read_Count(map->rear_right,
-                            &next_encoder.rear_right) == 0)
-    {
-        return 0;
-    }
-
-    // 四路全部成功后，再把完整结果交给调用者。
-    *encoder = next_encoder;
-    return 1;
-}
-uint8_t App_Chassis_Write_Output(const ChassisMotorMap *map,
-                                const ChassisOutput *output)//将四轮算好量给对应电机接口
-{
-    uint8_t valid_count = 0;
-
-    if (map == NULL || output == NULL)
-    {
-        return 0;
-    }
-
-    // 转成整数之前检查范围；这种写法也能拒绝NaN。
-    if (!(output->front_left >= -1000.0f &&
-          output->front_left <= 1000.0f) ||
-        !(output->front_right >= -1000.0f &&
-          output->front_right <= 1000.0f) ||
-        !(output->rear_left >= -1000.0f &&
-          output->rear_left <= 1000.0f) ||
-        !(output->rear_right >= -1000.0f &&
-          output->rear_right <= 1000.0f))
-    {
-        return 0;
-    }
-
-    // 每路都尝试设置，统计成功数量，不因一路失败跳过其他轮。
-    valid_count += BSP_Motor_Set_Output(
-        map->front_left, (int16_t)output->front_left);
-
-    valid_count += BSP_Motor_Set_Output(
-        map->front_right, (int16_t)output->front_right);
-
-    valid_count += BSP_Motor_Set_Output(
-        map->rear_left, (int16_t)output->rear_left);
-
-    valid_count += BSP_Motor_Set_Output(
-        map->rear_right, (int16_t)output->rear_right);
-
-    return valid_count == BSP_MOTOR_COUNT;
-}
 uint8_t App_Chassis_Control(const ChassisConfig *config,
                            const ChassisMotorMap *map,
                            uint8_t enabled,
@@ -660,7 +271,6 @@ uint8_t App_Chassis_Control(const ChassisConfig *config,
     ChassisEncoder encoder;
     ChassisOutput output = {0};
     uint8_t control_valid;
-    uint32_t motor_index;
 
     // 读取失败时传NULL，通知测速逻辑取消旧计数起点。
     if (App_Chassis_Read_Encoder(map, &encoder) == 0)
@@ -683,14 +293,8 @@ uint8_t App_Chassis_Control(const ChassisConfig *config,
         }
         App_Chassis_Stop(&output);
 
-        // 不依赖可能出错的轮位映射，逐个尝试将四个接口归零。
-        for (motor_index = 0;
-             motor_index < BSP_MOTOR_COUNT;
-             motor_index++)
-        {
-            // 无论本路是否成功，都继续尝试其他接口；本分支最终返回0。
-            (void)BSP_Motor_Set_Output((BSPMotorId)motor_index, 0);
-        }
+        // 轮位映射可能出错，直接按电路板接口尝试全部归零。
+        Chassis_IO_TryZeroAll();
 
         return 0;
     }
@@ -809,12 +413,7 @@ static void App_Chassis_Update_Stop(float dt_s, uint8_t control_valid)
         chassis_stop_time = 0.0f;
         return;
     }
-    if (fabsf(wheel_feedback.front_left) > CHASSIS_STOP_WHEEL_RPS ||
-        fabsf(wheel_feedback.front_right) > CHASSIS_STOP_WHEEL_RPS ||
-        fabsf(wheel_feedback.rear_left) > CHASSIS_STOP_WHEEL_RPS ||
-        fabsf(wheel_feedback.rear_right) > CHASSIS_STOP_WHEEL_RPS ||
-        chassis_ramp.vx != 0.0f || chassis_ramp.vy != 0.0f ||
-        chassis_ramp.wz != 0.0f)
+    if (Chassis_Control_IsStopped(CHASSIS_STOP_WHEEL_RPS) == 0U)
     {
         chassis_stop_time = 0.0f;
         return;
@@ -856,7 +455,7 @@ static TaskResult App_Chassis_Dispatch_Task(ChassisSpeed *target,
 static void App_Chassis_Handle_Result(TaskResult result,
                                       const ChassisSpeed *target)
 {
-    chassis_target = *target;
+    Chassis_Control_SetTarget(*target);
     switch (result)
     {
         case TASK_MOVE:
@@ -869,7 +468,7 @@ static void App_Chassis_Handle_Result(TaskResult result,
             chassis_status = CHASSIS_STATUS_RUNNING;
             break;
         case TASK_FINISHED:
-            chassis_target = (ChassisSpeed){0};
+            Chassis_Control_SetTarget((ChassisSpeed){0});
             chassis_finish_pending = 1U;
             chassis_stop_auto = 1U;
             chassis_stop_time = 0.0f;
@@ -882,7 +481,7 @@ static void App_Chassis_Handle_Result(TaskResult result,
             break;
         case TASK_UNSET:
         case TASK_WAIT:
-            chassis_target = (ChassisSpeed){0};
+            Chassis_Control_SetTarget((ChassisSpeed){0});
             chassis_status = CHASSIS_STATUS_WAITING;
             break;
     }
@@ -914,7 +513,7 @@ uint8_t App_Chassis_Run(const ChassisMotorMap *map,
     }
     else if (chassis_status == CHASSIS_STATUS_STOPPING)
     {
-        chassis_target = (ChassisSpeed){0};
+        Chassis_Control_SetTarget((ChassisSpeed){0});
     }
     else if (chassis_task != CHASSIS_TASK_NONE &&
              chassis_status != CHASSIS_STATUS_DONE &&
@@ -937,7 +536,7 @@ uint8_t App_Chassis_Run(const ChassisMotorMap *map,
     if (chassis_status == CHASSIS_STATUS_FAULT ||
         chassis_status == CHASSIS_STATUS_NOT_READY)
     {
-        chassis_target = (ChassisSpeed){0};
+        Chassis_Control_SetTarget((ChassisSpeed){0});
         motion_allowed = 0U;
     }
     control_valid = App_Chassis_Control(&chassis_config, map,

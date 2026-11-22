@@ -15,7 +15,7 @@ $objects = @()
 try
 {
     $flags = @('-Wall', '-Wextra', '-Werror', "-I$projectRoot\application", "-I$projectRoot\components", "-I$projectRoot\bsp")
-    $cSources = @((Join-Path $PSScriptRoot 'test_flow.c')) + @('motor', 'pid', 'ramp', 'mecanum' | ForEach-Object { Join-Path $projectRoot "components\$_.c" })
+    $cSources = @((Join-Path $PSScriptRoot 'test_flow.c'), (Join-Path $projectRoot 'application\app_chassis_io.c'), (Join-Path $projectRoot 'application\app_chassis_control.c')) + @('motor', 'pid', 'ramp', 'mecanum' | ForEach-Object { Join-Path $projectRoot "components\$_.c" })
     $cppSources = @((Join-Path $projectRoot 'components\wheel.cpp'), (Join-Path $projectRoot 'application\app_chassis_wheels.cpp'))
 
     # 各自按 C 和 C++ 编译，最后用 C++ 编译器链接到同一个程序。

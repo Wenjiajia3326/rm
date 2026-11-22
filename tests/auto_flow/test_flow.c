@@ -45,11 +45,20 @@ TrackCheck App_Track_GetAction(TrackAction part, uint8_t route,
     return action_ready;
 }
 static unsigned nonzero_outputs;
-static uint8_t output_fail;
+static BSPMotorId read_failure = BSP_MOTOR_COUNT;
+static BSPMotorId output_failure = BSP_MOTOR_COUNT;
+static unsigned zero_writes[BSP_MOTOR_COUNT];
 uint8_t BSP_Motor_Read_Count(BSPMotorId id, uint16_t *count)
-{ (void)id; *count = 0U; return 1U; }
+{
+    *count = 0U;
+    return id != read_failure;
+}
 uint8_t BSP_Motor_Set_Output(BSPMotorId id, int16_t duty)
-{ (void)id; if (duty != 0) nonzero_outputs++; return !output_fail; }
+{
+    if (duty != 0) nonzero_outputs++;
+    else zero_writes[id]++;
+    return id != output_failure;
+}
 uint8_t BSP_Motor_Output_Init(void) { return 1U; }
 uint8_t BSP_Motor_Encoder_Init(void) { return 1U; }
 uint8_t BSP_Motor_Get_Encoder_Range(uint32_t *range)
@@ -69,22 +78,28 @@ static void test_wheel_control(void)
     ChassisEncoder count = {100U, 200U, 300U, 400U};
     ChassisOutput output;
     const float dt_s = 0.125f;
+    const ChassisRampConfig ramp = {32.0f, 32.0f, 32.0f, 32.0f};
+    const MecanumConfig mecanum = {1.0f, 0.5f, 0.5f};
 
     App_Chassis_Init();
     assert(App_Chassis_Init_PI(0.0f, 2.0f, 100.0f, -1000.0f, 1000.0f));
     assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_READY);
     assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_VALID);
 
-    // 只让左前轮积累误差，其他三轮的积分应保持为零。
-    wheel_target.front_left = 4.0f;
+    // 让左前和右后轮积累误差，另两个轮子的积分应保持为零。
+    Chassis_Control_SetTarget((ChassisSpeed){2.0f, -2.0f, 0.0f});
+    assert(App_Chassis_Update_Ramp(&ramp, dt_s));
+    assert(App_Chassis_Update_Wheel(&mecanum, 100.0f));
     assert(App_Chassis_Calc_Output(dt_s, &output));
     assert(output.front_left == 1.0f);
-    assert(output.front_right == 0.0f && output.rear_left == 0.0f && output.rear_right == 0.0f);
+    assert(output.front_right == 0.0f && output.rear_left == 0.0f && output.rear_right == 1.0f);
     assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_VALID);
     assert(App_Chassis_Calc_Output(dt_s, &output) && output.front_left == 2.0f);
     App_Chassis_Stop(&output);
     assert(output.front_left == 0.0f);
-    wheel_target.front_left = 4.0f;
+    Chassis_Control_SetTarget((ChassisSpeed){2.0f, -2.0f, 0.0f});
+    assert(App_Chassis_Update_Ramp(&ramp, dt_s));
+    assert(App_Chassis_Update_Wheel(&mecanum, 100.0f));
     assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_VALID);
     assert(App_Chassis_Calc_Output(dt_s, &output) && output.front_left == 1.0f);
 
@@ -93,7 +108,12 @@ static void test_wheel_control(void)
     count.front_left += 20U;
     assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_READY);
     assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_VALID);
-    assert(wheel_feedback.front_left == 0.0f);
+    assert(App_Chassis_Calc_Output(dt_s, &output) && output.front_left == 2.0f);
+    assert(App_Chassis_Init_PI(1.0f, 0.0f, 100.0f, -1000.0f, 1000.0f));
+    assert(App_Chassis_Update_Feedback(&count, 65536U, 1000U, dt_s) == MOTOR_SAMPLE_VALID);
+    assert(Chassis_Control_IsStopped(0.0f) == 0U);
+    App_Chassis_Stop(NULL);
+    assert(Chassis_Control_IsStopped(0.0f));
 }
 
 int main(void)
@@ -189,15 +209,21 @@ int main(void)
     // 底盘接口测试：拒绝启动时保留原任务，允许连续交接时保留速度目标。
     prepare(); assert(App_Chassis_StartLine1(1));
     assert(!App_Chassis_StartLap(1)); assert(!App_Chassis_StartLine2(0));
-    chassis_boundary = 1; chassis_task_done = 1; chassis_target.vx = 0.2f;
+    chassis_boundary = 1; chassis_task_done = 1;
+    Chassis_Control_SetTarget((ChassisSpeed){0.2f, 0.0f, 0.0f});
     assert(App_Chassis_IsArrived());
     assert(App_Chassis_StartLap(1));
-    assert(chassis_target.vx == 0.2f && !App_Chassis_IsArrived());
+    assert(!App_Chassis_IsArrived());
+    ChassisEncoder counts = {0};
+    ChassisOutput output;
+    assert(!App_Chassis_Update(&chassis_config, &counts, 1U, 0.01f, &output));
+    assert(App_Chassis_Update(&chassis_config, &counts, 1U, 0.01f, &output));
+    assert(output.front_left > 0.0f);  // 连续交接保留了前进目标。
     App_Chassis_StopLine1(); assert(chassis_task == CHASSIS_TASK_LAP);
     App_Chassis_RequestStop(); chassis_stop_time = 0.01f;
     App_Chassis_RequestStop(); assert(chassis_stop_time == 0.01f);
     assert(chassis_status == CHASSIS_STATUS_STOPPING && !chassis_task_done);
-    wheel_feedback = (WheelSpeed){0}; chassis_ramp = (ChassisSpeed){0};
+    App_Chassis_Stop(NULL);
     App_Chassis_Update_Stop(0.04f,0); assert(chassis_status == CHASSIS_STATUS_STOPPING);
     App_Chassis_Update_Stop(0.04f,1); assert(chassis_status == CHASSIS_STATUS_IDLE);
     assert(App_Chassis_StartLine2(1));
@@ -215,8 +241,23 @@ int main(void)
     assert(App_Chassis_SetLight(2,1));
     App_Chassis_Run(&map,1,0.01f);
     assert(!chassis_light_valid && nonzero_outputs == 0);
-    output_fail = 1; App_Chassis_Run(&map,1,0.01f);
-    assert(chassis_status == CHASSIS_STATUS_FAULT);
-    puts("PASS: wheel control, routes, gaps, lap, tunnel, handoff, cancellation, disable, stop and light consumption");
+    // 有一路编码器读取失败时，调用者收到的整组计数保持不变。
+    ChassisEncoder previous = {11U, 22U, 33U, 44U};
+    read_failure = BSP_MOTOR_3;
+    assert(!App_Chassis_Read_Encoder(&map, &previous));
+    assert(previous.front_left == 11U && previous.front_right == 22U &&
+           previous.rear_left == 33U && previous.rear_right == 44U);
+    assert(!App_Chassis_Control(&chassis_config, &map, 1U, 0.01f));
+    assert(App_Chassis_GetStatus() == CHASSIS_STATUS_FAULT);
+    read_failure = BSP_MOTOR_COUNT;
+
+    // 一路输出失败，映射写一轮后，四个物理接口都再收到一次归零请求。
+    prepare(); assert(App_Chassis_StartLine1(1));
+    for (unsigned i = 0; i < BSP_MOTOR_COUNT; i++) zero_writes[i] = 0U;
+    output_failure = BSP_MOTOR_2;
+    assert(!App_Chassis_Run(&map, 1U, 0.01f));
+    assert(App_Chassis_GetStatus() == CHASSIS_STATUS_FAULT);
+    for (unsigned i = 0; i < BSP_MOTOR_COUNT; i++) assert(zero_writes[i] == 2U);
+    puts("PASS: wheel control, I/O failures, routes, gaps, lap, tunnel, handoff, cancellation, disable, stop and light consumption");
     return 0;
 }
