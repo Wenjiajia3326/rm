@@ -231,13 +231,6 @@ void StartRobotTask(void *argument)
                                       (float)CHASSIS_LIMIT_CARRY_PCT / 100.0f);
             }
 
-            // 地形档选"隧道"时压到 40%，由操作手在进隧道前切档
-            if (App_Robot_GetTerrain() == TERRAIN_TUNNEL_V)
-            {
-                drive_scale = APP_MIN(drive_scale,
-                                      (float)CHASSIS_LIMIT_TUNNEL_PCT / 100.0f);
-            }
-
             manual_target.vx = (float)App_Remote_GetVx() * CHASSIS_MAX_LINEAR_MPS * drive_scale / 100.0f;
             manual_target.vy = (float)App_Remote_GetVy() * CHASSIS_MAX_LINEAR_MPS * drive_scale / 100.0f;
             manual_target.wz = (float)App_Remote_GetWz() * CHASSIS_MAX_ANGULAR_RPS * drive_scale / 100.0f;
