@@ -140,9 +140,9 @@
 
 // 底盘控制参数，由电控A维护。
 // 0表示尚未确认，不是可直接运行的调试参数。
-#define CHASSIS_WHEEL_RADIUS_M       0.0f  // 轮子半径，单位m。
-#define CHASSIS_HALF_LENGTH_M        0.0f  // 前后轮中心距离的一半，单位m。
-#define CHASSIS_HALF_WIDTH_M         0.0f  // 左右轮中心距离的一半，单位m。
+#define CHASSIS_WHEEL_RADIUS_M       0.026f  // 实测直径52mm，半径26mm，单位m。
+#define CHASSIS_HALF_LENGTH_M        0.0875f // 实测前后轮中心距离175mm的一半，单位m。
+#define CHASSIS_HALF_WIDTH_M         0.1022f // 实测左右轮中心距离204.4mm的一半，单位m。
 
 #define CHASSIS_LINEAR_ACCEL         0.0f  // 平移加速度限制，单位m/s²。
 #define CHASSIS_LINEAR_DECEL         0.0f  // 平移减速度限制，单位m/s²。
@@ -155,16 +155,32 @@
 #define CHASSIS_MAX_ANGULAR_RPS 0.0f  // 旋转满幅角速度，单位rad/s，不是圈/s。
 
 #define CHASSIS_MAX_WHEEL_SPEED_RAD_S 0.0f // 轮轴角速度上限，单位rad/s。
-#define CHASSIS_COUNTS_PER_REV       0U   // 轮子一圈的最终编码器计数。
+#define CHASSIS_COUNTS_PER_REV       1007U // 输出轮一圈实测计数，已包含倍频及减速机构，不再乘减速比。
 
-// 速度PI参数，等待实车调试确认。
-#define CHASSIS_SPEED_KP             0.0f
-#define CHASSIS_SPEED_KI             0.0f
-#define CHASSIS_SPEED_INTEGRAL_MAX   0.0f
+// 2026-11-27单轮实测：四轮共用增益，积分各自保存；整车负载下仍需验证。
+#define CHASSIS_SPEED_KP             40.0f
+#define CHASSIS_SPEED_KI             50.0f // 积分增量为Ki×误差×实际秒数。
+#define CHASSIS_SPEED_INTEGRAL_MAX   600.0f // 沿用测试配置，尚非最终落地标定值。
 
-// 驱动请求范围，单位为千分比。
-#define CHASSIS_SPEED_OUTPUT_MIN     (-1000.0f)
-#define CHASSIS_SPEED_OUTPUT_MAX     1000.0f
+// 补偿前的车身方向PI范围；初始化时还要折算各轮的实际硬件上限。
+#define CHASSIS_SPEED_OUTPUT_MIN     (-600.0f)
+#define CHASSIS_SPEED_OUTPUT_MAX     600.0f
+
+// 当前接线：M1左前、M2右前、M3左后、M4右后；正轮速均表示推动车身前进。
+// 反馈符号只在测速后乘一次；输出符号只在写BSP前乘一次。
+#define CHASSIS_ENCODER_SIGN_FL      (-1)
+#define CHASSIS_ENCODER_SIGN_FR      1
+#define CHASSIS_ENCODER_SIGN_RL      (-1)
+#define CHASSIS_ENCODER_SIGN_RR      1
+#define CHASSIS_OUTPUT_SIGN_FL       (-1)
+#define CHASSIS_OUTPUT_SIGN_FR       1
+#define CHASSIS_OUTPUT_SIGN_RL       (-1)
+#define CHASSIS_OUTPUT_SIGN_RR       1
+
+// 硬件正向试验补偿；只在应用层输出转换中执行，BSP仅负责PWM互补换算。
+#define CHASSIS_POSITIVE_DUTY_SCALE  2.0f
+#define CHASSIS_HARDWARE_DUTY_MIN    (-600.0f)
+#define CHASSIS_HARDWARE_DUTY_MAX    1000.0f
 
 // 循迹参数，0表示尚未标定，暂不作为可运行参数。
 #define CHASSIS_LINE_FORWARD_MPS   0.0f  // 循迹前进速度，单位m/s。

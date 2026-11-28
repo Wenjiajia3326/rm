@@ -1,6 +1,8 @@
 // 电脑端流程模拟：用模拟结果代替现场判断和基础循迹，不连接真实电机硬件。
 #include <assert.h>
 #include <stdio.h>
+#include <math.h>
+#include "pid.h"
 #include "app_config.h"
 #undef CHASSIS_HANDOFF_TIMEOUT_S
 #define CHASSIS_HANDOFF_TIMEOUT_S 0.5f
@@ -48,6 +50,7 @@ static unsigned nonzero_outputs;
 static BSPMotorId read_failure = BSP_MOTOR_COUNT;
 static BSPMotorId output_failure = BSP_MOTOR_COUNT;
 static unsigned zero_writes[BSP_MOTOR_COUNT];
+static int16_t last_duty[BSP_MOTOR_COUNT];
 uint8_t BSP_Motor_Read_Count(BSPMotorId id, uint16_t *count)
 {
     *count = 0U;
@@ -55,6 +58,7 @@ uint8_t BSP_Motor_Read_Count(BSPMotorId id, uint16_t *count)
 }
 uint8_t BSP_Motor_Set_Output(BSPMotorId id, int16_t duty)
 {
+    last_duty[id] = duty;
     if (duty != 0) nonzero_outputs++;
     else zero_writes[id]++;
     return id != output_failure;
@@ -116,8 +120,98 @@ static void test_wheel_control(void)
     assert(Chassis_Control_IsStopped(0.0f));
 }
 
+// 采用实测接线和计数，验证方向转换只执行一次，以及真实硬件限幅能反馈到条件积分。
+static void test_measured_motor_calibration(void)
+{
+    const ChassisMotorMap map = {BSP_MOTOR_1, BSP_MOTOR_2, BSP_MOTOR_3, BSP_MOTOR_4};
+    const ChassisRampConfig ramp = {10000,10000,10000,10000};
+    const MecanumConfig mecanum = {1,0.5f,0.5f};
+    ChassisEncoder counts = {1007,1007,1007,1007};
+    ChassisOutput output;
+    const float one_rev_rad_s = 6.2831853f;
+
+    // 小输出未触及限幅，可明确检测方向反号或两倍补偿是否重复执行。
+    output = (ChassisOutput){123.25f,123.25f,123.25f,123.25f};
+    assert(App_Chassis_Write_Output(&map,&output));
+    assert(last_duty[0] == -123 && last_duty[2] == -123);
+    assert(last_duty[1] == 247 && last_duty[3] == 247);
+    output = (ChassisOutput){-123.25f,-123.25f,-123.25f,-123.25f};
+    assert(App_Chassis_Write_Output(&map,&output));
+    assert(last_duty[0] == 247 && last_duty[2] == 247);
+    assert(last_duty[1] == -123 && last_duty[3] == -123);
+
+    App_Chassis_Init();
+    assert(App_Chassis_Init_PI(CHASSIS_SPEED_KP, CHASSIS_SPEED_KI,
+        CHASSIS_SPEED_INTEGRAL_MAX, CHASSIS_SPEED_OUTPUT_MIN, CHASSIS_SPEED_OUTPUT_MAX));
+    assert(App_Chassis_Update_Feedback(&counts,65536,CHASSIS_COUNTS_PER_REV,1) == MOTOR_SAMPLE_READY);
+    // 向前一圈：左侧减1007、右侧加1007，四轮反馈都应为+2π。
+    counts = (ChassisEncoder){0,2014,0,2014};
+    assert(App_Chassis_Update_Feedback(&counts,65536,CHASSIS_COUNTS_PER_REV,1) == MOTOR_SAMPLE_VALID);
+    Chassis_Control_SetTarget((ChassisSpeed){one_rev_rad_s,0,0});
+    assert(App_Chassis_Update_Ramp(&ramp,1));
+    assert(App_Chassis_Update_Wheel(&mecanum,1000));
+    assert(App_Chassis_Calc_Output(1,&output));
+    assert(fabsf(output.front_left) < 0.001f && fabsf(output.front_right) < 0.001f);
+    assert(fabsf(output.rear_left) < 0.001f && fabsf(output.rear_right) < 0.001f);
+    // 倒退一圈：原始计数方向反过来，反馈应为-2π。
+    counts = (ChassisEncoder){1007,1007,1007,1007};
+    assert(App_Chassis_Update_Feedback(&counts,65536,CHASSIS_COUNTS_PER_REV,1) == MOTOR_SAMPLE_VALID);
+    Chassis_Control_SetTarget((ChassisSpeed){-one_rev_rad_s,0,0});
+    // 原斜坡设计要求反向先归零，再用下一拍进入反向目标。
+    assert(App_Chassis_Update_Ramp(&ramp,1));
+    assert(App_Chassis_Update_Ramp(&ramp,1));
+    assert(App_Chassis_Update_Wheel(&mecanum,1000));
+    assert(App_Chassis_Calc_Output(1,&output));
+    assert(fabsf(output.front_left) < 0.001f && fabsf(output.front_right) < 0.001f);
+    assert(fabsf(output.rear_left) < 0.001f && fabsf(output.rear_right) < 0.001f);
+
+    for (int direction = -1; direction <= 1; direction += 2)
+    {
+        App_Chassis_Stop(NULL);
+        Chassis_Control_SetTarget((ChassisSpeed){100.0f * direction,0,0});
+        assert(App_Chassis_Update_Ramp(&ramp,1));
+        assert(App_Chassis_Update_Wheel(&mecanum,1000));
+        // 模拟持续堵转的饱和误差，积分不能继续堆积。
+        for (unsigned i = 0; i < 100; ++i)
+        {
+            assert(App_Chassis_Update_Feedback(&counts,65536,CHASSIS_COUNTS_PER_REV,0.01f) == MOTOR_SAMPLE_VALID);
+            assert(App_Chassis_Calc_Output(0.01f,&output));
+        }
+        assert(output.front_left == (direction > 0 ? 600 : -500));
+        assert(output.rear_left == output.front_left);
+        assert(output.front_right == (direction > 0 ? 500 : -600));
+        assert(output.rear_right == output.front_right);
+        assert(App_Chassis_Write_Output(&map,&output));
+        assert(last_duty[0] == (direction > 0 ? -600 : 1000));
+        assert(last_duty[2] == last_duty[0]);
+        assert(last_duty[1] == (direction > 0 ? 1000 : -600));
+        assert(last_duty[3] == last_duty[1]);
+        // 不复位PI，直接把误差归零：若饱和时积累了积分，此处仍会输出。
+        Chassis_Control_SetTarget((ChassisSpeed){0});
+        assert(App_Chassis_Update_Ramp(&ramp,1));
+        assert(App_Chassis_Update_Wheel(&mecanum,1000));
+        assert(App_Chassis_Update_Feedback(&counts,65536,CHASSIS_COUNTS_PER_REV,0.01f) == MOTOR_SAMPLE_VALID);
+        assert(App_Chassis_Calc_Output(0.01f,&output));
+        assert(output.front_left == 0 && output.front_right == 0);
+        assert(output.rear_left == 0 && output.rear_right == 0);
+        assert(App_Chassis_Write_Output(&map,&output));
+        for (unsigned i = 0; i < BSP_MOTOR_COUNT; ++i) assert(last_duty[i] == 0);
+    }
+    // 非饱和时积分正常累积；饱和时仍允许反向积分解除饱和，积分自身独立限幅。
+    PidData pid;
+    assert(Pid_Init(&pid,40,50,600,-500,600));
+    assert(Pid_Calc(&pid,1,0,0.01f) == 40.5f);
+    pid.integral = 600;
+    assert(Pid_Calc(&pid,-1,0,0.01f) == 559.5f && pid.integral == 599.5f);
+    assert(Pid_Init(&pid,0,50,10,-500,600));
+    assert(Pid_Calc(&pid,1,0,1) == 10 && pid.integral == 10);
+    assert(Pid_Calc(&pid,-1,0,1) == -10 && pid.integral == -10);
+}
+
 int main(void)
 {
+    test_measured_motor_calibration();
+    nonzero_outputs = 0U; // 后续流程测试独立统计是否误输出。
     test_wheel_control();
     ChassisSpeed target;
     TrackInput t = {0};
@@ -258,6 +352,6 @@ int main(void)
     assert(!App_Chassis_Run(&map, 1U, 0.01f));
     assert(App_Chassis_GetStatus() == CHASSIS_STATUS_FAULT);
     for (unsigned i = 0; i < BSP_MOTOR_COUNT; i++) assert(zero_writes[i] == 2U);
-    puts("PASS: wheel control, I/O failures, routes, gaps, lap, tunnel, handoff, cancellation, disable, stop and light consumption");
+    puts("PASS: measured motor calibration, wheel control, I/O failures, routes, gaps, lap, tunnel, handoff, cancellation, disable, stop and light consumption");
     return 0;
 }

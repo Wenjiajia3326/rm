@@ -93,7 +93,7 @@ void App_Line_Reset(void)
 }
 
 // 将五路原始电平整理成循迹算法使用的黑白结果。
-// 暂按GRAY_1到GRAY_5对应左到右、高电平表示黑色，实物到位后核对。
+// 已实测：从左到右为GRAY_5到GRAY_1（OUT5到OUT1），黑线1、白底0。
 static uint8_t App_Line_Read(LineInput *input)
 {
     uint8_t level[LINE_SENSOR_COUNT];  // 暂存五路原始电平。
@@ -116,8 +116,8 @@ static uint8_t App_Line_Read(LineInput *input)
          sensor_index < LINE_SENSOR_COUNT;
          sensor_index++)
     {
-        // 把当前探头的电平保存到对应的黑白结果中。
-        input->black[sensor_index] = level[sensor_index];
+        // 驱动按GRAY_1到GRAY_5读取；倒序整理成算法要求的左到右，无需取反。
+        input->black[sensor_index] = level[LINE_SENSOR_COUNT - 1U - sensor_index];
     }
 
     // 表示完成了软件读取，不代表已检测到黑线或硬件连接正常。

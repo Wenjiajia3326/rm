@@ -369,6 +369,19 @@ static uint8_t App_Chassis_Check_Config(void)
         return 0;
     }
 
+    // 硬件正向补偿必须有效，硬件范围必须包含零且不超过BSP千分比能力。
+    if (!isfinite(CHASSIS_POSITIVE_DUTY_SCALE) ||
+        CHASSIS_POSITIVE_DUTY_SCALE <= 0.0f ||
+        !isfinite(CHASSIS_HARDWARE_DUTY_MIN) ||
+        !isfinite(CHASSIS_HARDWARE_DUTY_MAX) ||
+        CHASSIS_HARDWARE_DUTY_MIN < -1000.0f ||
+        CHASSIS_HARDWARE_DUTY_MIN >= 0.0f ||
+        CHASSIS_HARDWARE_DUTY_MAX <= 0.0f ||
+        CHASSIS_HARDWARE_DUTY_MAX > 1000.0f)
+    {
+        return 0;
+    }
+
     return 1;
 }
 uint8_t App_Chassis_Start(void)

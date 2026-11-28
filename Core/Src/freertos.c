@@ -125,7 +125,7 @@ void MX_FREERTOS_Init(void) {
 void StartRobotTask(void *argument)
 {
   /* USER CODE BEGIN StartRobotTask */
-    // 按原理图约定轮位，实物接线和转动方向仍需核对。
+    // 2026-11-27实测轮位；反馈和输出方向由app_config配置，在底盘控制与读写模块各处理一次。
     const ChassisMotorMap motor_map = // 轮位与电路板接口的对应表，建立后不修改。
     {
         .front_left  = BSP_MOTOR_1,
