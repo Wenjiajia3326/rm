@@ -44,6 +44,9 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+// 取较小值。参数会被求值两次，只传变量或常量。
+#define APP_MIN(a, b)   (((a) < (b)) ? (a) : (b))
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -122,7 +125,7 @@ void MX_FREERTOS_Init(void) {
 void StartRobotTask(void *argument)
 {
   /* USER CODE BEGIN StartRobotTask */
-    // 按原理图约定轮位，实物接线和转动方向仍需核对。
+    // 2026-11-27实测轮位；反馈和输出方向由app_config配置，在底盘控制与读写模块各处理一次。
     const ChassisMotorMap motor_map = // 轮位与电路板接口的对应表，建立后不修改。
     {
         .front_left  = BSP_MOTOR_1,
@@ -133,6 +136,10 @@ void StartRobotTask(void *argument)
     const TickType_t period_ticks = pdMS_TO_TICKS(CHASSIS_CONTROL_PERIOD_MS); // 把配置的10毫秒换成RTOS节拍数。
     TickType_t last_wake_tick; // 保存周期等待的计划时间基准，不是毫秒时间。
     uint8_t chassis_ready; // 启动结果：1表示准备成功，0表示失败。
+    uint8_t mode;           // 本轮模式，避免重复读取。
+    uint8_t drive_ok;       // 本周期是否允许底盘出力。
+    float drive_scale;      // 互锁限速比例，1.0 = 满速。
+    ChassisSpeed manual_target; // 摇杆换算出的实际速度目标。
     uint32_t previous_ms; // 上一轮读取时间的时刻，单位毫秒。
     uint32_t current_ms; // 本轮读取时间的时刻，单位毫秒。
     uint32_t elapsed_ms; // 两次读取时间之间经过的毫秒数。
@@ -172,6 +179,7 @@ void StartRobotTask(void *argument)
         // 通信始终更新，不受底盘配置是否准备成功影响。
         App_Remote_Update(); // 处理遥控帧、模式、按键和失联判断。
         App_Vision_Update(); // 处理视觉路线、灯色和在线状态。
+        App_Robot_Update();  // 推进整机状态：自动流程、调试推进。
         App_Arm_Update();    // 推进机械臂分段动作。
 
         current_ms = HAL_GetTick(); // 记录本轮实际开始处理的毫秒时刻。
@@ -191,9 +199,46 @@ void StartRobotTask(void *argument)
             continue;
         }
 
-        // 先接通禁止运动时的采样和零输出，尚不接收运动命令。
-        // 禁止运动时返回0属于正常情况，不能据此取消启动成功状态。
-        (void)App_Chassis_Run(&motor_map, 0U, dt_s); // 传轮位表和实际间隔；0U禁止运动，暂不使用返回值。
+        mode = App_Robot_GetMode();
+
+        // 允许底盘出力：链路正常、机械臂空闲、无故障，且模式允许行驶。
+        // 自动也要链路：自动是靠遥控把模式切进来的，链路在说明手柄还在。
+        drive_ok = (uint8_t)(
+            (App_Remote_IsLinkOk() != 0U) &&
+            (App_Arm_IsBusy() == 0U) &&
+            (App_Chassis_GetStatus() != CHASSIS_STATUS_FAULT) &&
+            ((mode == APP_MODE_COMP_MANUAL_V) ||
+             (mode == APP_MODE_CHASSIS_DEBUG_V) ||
+             (mode == APP_MODE_COMP_AUTO_V)));
+
+        // 只有手动模式提交摇杆目标；自动阶段的目标由底盘任务自己生成。
+        if ((drive_ok != 0U) &&
+            ((mode == APP_MODE_COMP_MANUAL_V) || (mode == APP_MODE_CHASSIS_DEBUG_V)))
+        {
+            // 互锁限速：收纳空载 100%，臂未收纳 50%，携块 70%，同时满足取小。
+            // 动作进行中已由 drive_ok 直接关掉，不在这里。
+            drive_scale = (float)CHASSIS_LIMIT_NORMAL_PCT / 100.0f;
+
+            if (App_Arm_IsStowed() == 0U)
+            {
+                drive_scale = APP_MIN(drive_scale,
+                                      (float)CHASSIS_LIMIT_ARM_OUT_PCT / 100.0f);
+            }
+
+            if (App_Robot_GetLoad() == LOAD_CARRY_V)
+            {
+                drive_scale = APP_MIN(drive_scale,
+                                      (float)CHASSIS_LIMIT_CARRY_PCT / 100.0f);
+            }
+
+            manual_target.vx = (float)App_Remote_GetVx() * CHASSIS_MAX_LINEAR_MPS * drive_scale / 100.0f;
+            manual_target.vy = (float)App_Remote_GetVy() * CHASSIS_MAX_LINEAR_MPS * drive_scale / 100.0f;
+            manual_target.wz = (float)App_Remote_GetWz() * CHASSIS_MAX_ANGULAR_RPS * drive_scale / 100.0f;
+            (void)App_Chassis_SetTarget(&manual_target);
+        }
+
+        // 不许出力时返回0属于正常情况，不能据此取消启动成功状态。
+        (void)App_Chassis_Run(&motor_map, drive_ok, dt_s); // 传轮位表、本周期许可和实际间隔。
     }
   /* USER CODE END StartRobotTask */
 }

@@ -77,8 +77,8 @@
 /* btn_low：动作键 + 旋转键（位定义） */
 #define RC_BTN_ARM_READY                0x01U   ///< A 伸臂准备（回收纳位→伸出）
 #define RC_BTN_ARM_PICK                 0x02U   ///< B 夹紧并抬起
-#define RC_BTN_ARM_PLACE                0x04U   ///< C 下降+松开+后撤
-#define RC_BTN_ARM_HOME                 0x08U   ///< D 收回
+#define RC_BTN_ARM_HOME                 0x04U   ///< C 收回（丝印 C，收到收纳位）
+#define RC_BTN_ARM_PLACE                0x08U   ///< D 放置（丝印 D，下降+松开+后撤）
 #define RC_BTN_ROT_FAST_LEFT            0x10U   ///< 快速左旋（按住）；调试模式：选关节 1（底座）
 #define RC_BTN_ROT_FAST_RIGHT           0x20U   ///< 快速右旋（按住）；调试模式：选关节 2（下臂）
 #define RC_BTN_ROT_SLOW_LEFT            0x40U   ///< 精细左旋（按住）；调试模式：选关节 3（上臂）
@@ -87,6 +87,9 @@
 /* btn_high：仅 2 个功能键，其余 6 位预留 */
 #define RC_BTN_FINE_MODE                0x01U   ///< 精细/修正切换（即时生效）；调试模式：粗调/细调
 #define RC_BTN_ESTOP                    0x02U   ///< 急停（软件备份，硬件急停独立）
+
+/* ===================== 自动流程（owner：电控B） ===================== */
+#define APP_AUTO_LAP_ENABLE             1       ///< 自动阶段是否绕圈：1=绕 / 0=不绕
 
 /* ===================== 四、模式与档位取值（owner：电控B，与协议 V1.3 字段一致） ===================== */
 #define APP_MODE_INIT_V                 0U      ///< 初始 / 待命
@@ -103,8 +106,8 @@
 
 /* ---- 数量：仅用于数组长度与边界检查，不对应任何取值 ---- */
 #define APP_MODE_NUM                    5U      ///< 模式数量
-#define TERRAIN_NUM                     2U      ///< 地形档数量（电控A 确认后调整）
-#define LEVEL_NUM                       3U      ///< 高度档数量（机械B 标定后调整）
+#define TERRAIN_NUM                     2U      ///< 地形档数量（平路/颠簸；隧道=平地，不再单列）
+#define LEVEL_NUM                       5U      ///< 高度档数量（2026-11-23 改为 5 档）
 
 /* ===================== 五、舵机（owner：电控B，数值待机械B 标定） ===================== */
 #define SERVO_ID_BASE                   1U      ///< 底座旋转（单轴，机械B 串联顺序 1）
@@ -123,7 +126,6 @@
 #define CHASSIS_LIMIT_NORMAL_PCT        100U    ///< 收纳态行驶
 #define CHASSIS_LIMIT_ARM_OUT_PCT       50U     ///< 臂伸出时行驶
 #define CHASSIS_LIMIT_CARRY_PCT         70U     ///< 携块运输
-#define CHASSIS_LIMIT_TUNNEL_PCT        40U     ///< 过隧道姿态
 #define CHASSIS_LIMIT_ACTION_PCT        0U      ///< 抓放动作进行中：禁止行驶
 
 /* ===================== 八、调度与任务（owner：电控B） ===================== */
@@ -136,9 +138,9 @@
 
 // 底盘控制参数，由电控A维护。
 // 0表示尚未确认，不是可直接运行的调试参数。
-#define CHASSIS_WHEEL_RADIUS_M       0.0f  // 轮子半径，单位m。
-#define CHASSIS_HALF_LENGTH_M        0.0f  // 前后轮中心距离的一半，单位m。
-#define CHASSIS_HALF_WIDTH_M         0.0f  // 左右轮中心距离的一半，单位m。
+#define CHASSIS_WHEEL_RADIUS_M       0.026f  // 实测直径52mm，半径26mm，单位m。
+#define CHASSIS_HALF_LENGTH_M        0.0875f // 实测前后轮中心距离175mm的一半，单位m。
+#define CHASSIS_HALF_WIDTH_M         0.1022f // 实测左右轮中心距离204.4mm的一半，单位m。
 
 #define CHASSIS_LINEAR_ACCEL         0.0f  // 平移加速度限制，单位m/s²。
 #define CHASSIS_LINEAR_DECEL         0.0f  // 平移减速度限制，单位m/s²。
@@ -151,16 +153,32 @@
 #define CHASSIS_MAX_ANGULAR_RPS 0.0f  // 旋转满幅角速度，单位rad/s，不是圈/s。
 
 #define CHASSIS_MAX_WHEEL_SPEED_RAD_S 0.0f // 轮轴角速度上限，单位rad/s。
-#define CHASSIS_COUNTS_PER_REV       0U   // 轮子一圈的最终编码器计数。
+#define CHASSIS_COUNTS_PER_REV       1007U // 输出轮一圈实测计数，已包含倍频及减速机构，不再乘减速比。
 
-// 速度PI参数，等待实车调试确认。
-#define CHASSIS_SPEED_KP             0.0f
-#define CHASSIS_SPEED_KI             0.0f
-#define CHASSIS_SPEED_INTEGRAL_MAX   0.0f
+// 2026-11-27单轮实测：四轮共用增益，积分各自保存；整车负载下仍需验证。
+#define CHASSIS_SPEED_KP             40.0f
+#define CHASSIS_SPEED_KI             50.0f // 积分增量为Ki×误差×实际秒数。
+#define CHASSIS_SPEED_INTEGRAL_MAX   600.0f // 沿用测试配置，尚非最终落地标定值。
 
-// 驱动请求范围，单位为千分比。
-#define CHASSIS_SPEED_OUTPUT_MIN     (-1000.0f)
-#define CHASSIS_SPEED_OUTPUT_MAX     1000.0f
+// 补偿前的车身方向PI范围；初始化时还要折算各轮的实际硬件上限。
+#define CHASSIS_SPEED_OUTPUT_MIN     (-600.0f)
+#define CHASSIS_SPEED_OUTPUT_MAX     600.0f
+
+// 当前接线：M1左前、M2右前、M3左后、M4右后；正轮速均表示推动车身前进。
+// 反馈符号只在测速后乘一次；输出符号只在写BSP前乘一次。
+#define CHASSIS_ENCODER_SIGN_FL      (-1)
+#define CHASSIS_ENCODER_SIGN_FR      1
+#define CHASSIS_ENCODER_SIGN_RL      (-1)
+#define CHASSIS_ENCODER_SIGN_RR      1
+#define CHASSIS_OUTPUT_SIGN_FL       (-1)
+#define CHASSIS_OUTPUT_SIGN_FR       1
+#define CHASSIS_OUTPUT_SIGN_RL       (-1)
+#define CHASSIS_OUTPUT_SIGN_RR       1
+
+// 硬件正向试验补偿；只在应用层输出转换中执行，BSP仅负责PWM互补换算。
+#define CHASSIS_POSITIVE_DUTY_SCALE  2.0f
+#define CHASSIS_HARDWARE_DUTY_MIN    (-600.0f)
+#define CHASSIS_HARDWARE_DUTY_MAX    1000.0f
 
 // 循迹参数，0表示尚未标定，暂不作为可运行参数。
 #define CHASSIS_LINE_FORWARD_MPS   0.0f  // 循迹前进速度，单位m/s。

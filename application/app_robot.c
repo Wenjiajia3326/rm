@@ -6,13 +6,13 @@
 
 #include "app_robot.h"
 #include "app_config.h"
+#include "app_arm.h"
+#include "app_auto.h"
+#include "app_chassis.h"    /* 安全态出口：停车 */
 #include "bsp_log.h"
 
 /** 当前模式（APP_MODE_*_V） */
 static uint8_t s_mode;
-
-/** 当前地形档（TERRAIN_*_V） */
-static uint8_t s_terrain;
 
 /** 当前放置高度档索引 */
 static uint8_t s_level;
@@ -24,12 +24,13 @@ static uint8_t s_load;
  * @brief 请求所有执行器进入安全状态
  * @param  无
  * @return 无
- * @note   接入执行器模块后在此实现：底盘斜坡停车、机构停止动作并保持当前位置
+ * @note   底盘：取消自动任务并停车；机构：停在当前位置，剩余段不再下发
  * @note   切模式、链路丢失、急停都走这一个出口，避免多处写停车逻辑
  */
 static void App_Robot_RequestSafeState(void)
 {
-    /* TODO: App_Chassis_RequestStop(); App_Arm_RequestHold(); */
+    App_Chassis_RequestStop();
+    App_Arm_Stop();
 }
 
 /**
@@ -46,7 +47,8 @@ static void App_Robot_EnterMode(uint8_t mode)
             break;
 
         case APP_MODE_COMP_AUTO_V:
-            /* TODO: 自动流程复位到 A01（进入即开始） */
+            /* 进入自动：状态机复位，载荷置携块 */
+            App_Auto_Init();
             break;
 
         case APP_MODE_COMP_MANUAL_V:
@@ -54,19 +56,21 @@ static void App_Robot_EnterMode(uint8_t mode)
             break;
 
         case APP_MODE_ARM_DEBUG_V:
-            /* TODO: 只允许机构动作，底盘禁行 */
+            /* 底盘禁行由 freertos.c 的 drive_ok 模式白名单强制；
+               动作键只在 COMP_MANUAL / ARM_DEBUG 生效，见 app_remote.c */
             break;
 
         case APP_MODE_CHASSIS_DEBUG_V:
-            /* TODO: 只允许底盘动作，机构保持 */
+            /* 机构动作由 app_remote.c 的 HandleArmKeys 门控挡住；
+               本模式只允许动底盘 */
             break;
 
         default:
             break;
     }
 
-    LOG("mode -> %s (terrain=%u level=%u load=%u)\r\n",
-        App_Robot_GetModeName(mode), s_terrain, s_level, s_load);
+    LOG("mode -> %s (level=%u load=%u)\r\n",
+        App_Robot_GetModeName(mode), s_level, s_load);
 }
 
 /**
@@ -77,7 +81,10 @@ static void App_Robot_EnterMode(uint8_t mode)
  */
 static void App_Robot_ExitMode(uint8_t mode)
 {
-    (void)mode;
+    if (mode == APP_MODE_COMP_AUTO_V)
+    {
+        App_Auto_Stop();
+    }
 
     App_Robot_RequestSafeState();
 }
@@ -85,7 +92,6 @@ static void App_Robot_ExitMode(uint8_t mode)
 void App_Robot_Init(void)
 {
     s_mode    = APP_MODE_INIT_V;
-    s_terrain = TERRAIN_ROAD_V;
     s_level   = 0U;
     s_load    = LOAD_EMPTY_V;
 }
@@ -95,7 +101,7 @@ void App_Robot_Update(void)
     switch (s_mode)
     {
         case APP_MODE_COMP_AUTO_V:
-            /* TODO: 将来改为 App_Auto_Update();  自动流程 A01~A07 推进 */
+            App_Auto_Update();
             break;
 
         case APP_MODE_COMP_MANUAL_V:
@@ -143,16 +149,6 @@ void App_Robot_OnLinkLost(void)
 uint8_t App_Robot_GetMode(void)
 {
     return s_mode;
-}
-
-void App_Robot_SetTerrain(uint8_t terrain)
-{
-    s_terrain = terrain;
-}
-
-uint8_t App_Robot_GetTerrain(void)
-{
-    return s_terrain;
 }
 
 void App_Robot_SetLevel(uint8_t level)

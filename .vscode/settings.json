@@ -1,8 +1,9 @@
 {
     "cmake.cmakePath":  "cube-cmake",
     "cmake.configureArgs":  [
-        "-DCMAKE_COMMAND=cube-cmake"
-    ],
+                                "-DCMAKE_COMMAND=cube-cmake",
+                                "-DCMAKE_MAKE_PROGRAM=C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/ninja/1.13.2+st.1/bin/ninja.exe"
+                            ],
     "cmake.preferredGenerators":  [
                                       "Ninja"
                                   ],
@@ -14,6 +15,9 @@
     ],
     "cmake.useCMakePresets":  "always",
     "cmake.environment":  {
-                              "PATH":  "C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin;C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/ninja/1.13.2+st.1/bin;${env:PATH}"
-                          }
+                              "PATH":  "C:/Users/jiajiawen/.vscode/extensions/stmicroelectronics.stm32cube-ide-core-1.6.0-win32-x64/resources/binaries/win32/x86_64;C:/Users/jiajiawen/.vscode/extensions/stmicroelectronics.stm32cube-ide-build-cmake-1.48.0-win32-x64/resources/cube-cmake/win32/x86_64;C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin;C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/ninja/1.13.2+st.1/bin;${env:PATH}"
+                          },
+    "cmake.configureEnvironment":  {
+                                       "PATH":  "C:/Users/jiajiawen/.vscode/extensions/stmicroelectronics.stm32cube-ide-core-1.6.0-win32-x64/resources/binaries/win32/x86_64;C:/Users/jiajiawen/.vscode/extensions/stmicroelectronics.stm32cube-ide-build-cmake-1.48.0-win32-x64/resources/cube-cmake/win32/x86_64;C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin;C:/Users/jiajiawen/AppData/Local/stm32cube/bundles/ninja/1.13.2+st.1/bin;${env:PATH}"
+                                   }
 }

@@ -55,6 +55,10 @@ static int16_t s_debug_acc;
 /** 本次上电第一次动：用长 T 慢慢蹭 */
 static uint8_t s_debug_first_flag;
 
+/** 1 = 按约定在收纳位；上电先按"伸出"处理（保守） */
+static uint8_t s_arm_stowed;
+
+
 /** 软限位：机械B 回填《机构接口单》#5 后按关节收窄 */
 #define ARM_DEBUG_PULSE_MIN     800U
 #define ARM_DEBUG_PULSE_MAX     2200U
@@ -216,7 +220,7 @@ static void App_Arm_SendSegment(const ArmSegment_t *segment)
  * @return 无
  * @note   B 抓取完成 -> 置携块；C 放置完成 -> 置空载
  */
-static void App_Arm_Renew_Load_State(void)
+static void App_Arm_Renew_State(void)
 {
     if (s_action == ARM_ACT_PICK)
     {
@@ -228,6 +232,9 @@ static void App_Arm_Renew_Load_State(void)
     }
 
     LOG("arm done: %s\r\n", App_Arm_ActionName(s_action));
+
+    /* 约定：只有走完 D 才算回到收纳位 */
+    s_arm_stowed = (s_action == ARM_ACT_HOME) ? 1U : 0U;
 
     s_action = ARM_ACT_FREE;
     s_plan = 0;
@@ -243,6 +250,7 @@ void App_Arm_Init(void)
     s_step = 0U;
     s_step_tick = 0U;
 
+    s_arm_stowed = 0U;          /* 上电位置未知，按伸出处理 */
     s_debug_select_joint = (uint8_t)ARM_JOINT_NUM;
     s_debug_acc = 0;
     s_debug_first_flag = 1U;
@@ -277,7 +285,7 @@ void App_Arm_Update(void)
 
     if (s_step >= s_plan->step_amount)
     {
-        App_Arm_Renew_Load_State();
+        App_Arm_Renew_State();
         return;
     }
 
@@ -303,7 +311,7 @@ void App_Arm_Set_Action(ArmAction_t action)
         return;
     }
 
-    /* 守卫：A/B/D 进入时为空载；C 进入时为携块 */
+    /* 守卫：A/B 要求空载；C 要求携块；D 收回不限载荷（携块也要收进隧道包络） */
     load = App_Robot_GetLoad();
 
     if (action == ARM_ACT_PLACE)
@@ -314,7 +322,7 @@ void App_Arm_Set_Action(ArmAction_t action)
             return;
         }
     }
-    else
+    else if (action != ARM_ACT_HOME)
     {
         if (load != LOAD_EMPTY_V)
         {
@@ -341,6 +349,35 @@ uint8_t App_Arm_IsBusy(void)
 ArmAction_t App_Arm_GetAction(void)
 {
     return s_action;
+}
+
+uint8_t App_Arm_IsStowed(void)
+{
+    return s_arm_stowed;
+}
+
+
+void App_Arm_Stop(void)
+{
+    uint8_t joint;
+
+    if (s_action != ARM_ACT_FREE)
+    {
+        LOG("arm stop: %s\r\n", App_Arm_ActionName(s_action));
+        s_arm_stowed = 0U;      /* 停在半路，按伸出处理 */
+    }
+
+    s_action = ARM_ACT_FREE;
+    s_plan = 0;
+    s_step = 0U;
+    s_debug_acc = 0;
+    s_debug_select_joint = (uint8_t)ARM_JOINT_NUM;   /* 停掉就取消选中，下次进调试要重新选 */
+
+    /* 停在当前位置：不读回角度，靠舵机自身的 PDST 保持 */
+    for (joint = 0U; joint < (uint8_t)ARM_JOINT_NUM; joint++)
+    {
+        Servo_Stop(s_servo_id[joint]);
+    }
 }
 
 void App_Arm_Debug_Select(ArmJoint_t joint)
@@ -404,6 +441,7 @@ void App_Arm_Debug_Pulse_Update(int8_t stick, uint8_t fine)
 
     s_pulse[s_debug_select_joint] = (uint16_t)pulse;
     s_last_pulse[s_debug_select_joint] = (uint16_t)pulse;
+    s_arm_stowed = 0U;                  /* 推过脉宽，不再算收纳 */
 
     Servo_Move(s_servo_id[s_debug_select_joint], (uint16_t)pulse, time_ms);
 }

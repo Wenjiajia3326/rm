@@ -1,6 +1,27 @@
 // 底盘硬件读写：按轮位映射调用 BSP。
 #include "app_chassis_io.h"
+#include "app_config.h"
 #include <stddef.h>
+
+// 输入为车身方向PI输出；输出为BSP硬件方向千分比。
+static int16_t Chassis_IO_ToDuty(float output, int8_t output_sign)
+{
+    float duty = output * output_sign;
+    if (duty > 0.0f)
+    {
+        duty *= CHASSIS_POSITIVE_DUTY_SCALE;
+    }
+    if (duty > CHASSIS_HARDWARE_DUTY_MAX)
+    {
+        duty = CHASSIS_HARDWARE_DUTY_MAX;
+    }
+    else if (duty < CHASSIS_HARDWARE_DUTY_MIN)
+    {
+        duty = CHASSIS_HARDWARE_DUTY_MIN;
+    }
+    // 与单轮测试一致，补偿后再四舍五入到整数千分比。
+    return (int16_t)(duty >= 0.0f ? duty + 0.5f : duty - 0.5f);
+}
 
 uint8_t App_Chassis_Read_Encoder(const ChassisMotorMap *map,
                                 ChassisEncoder *encoder)//读取编码器的量
@@ -54,16 +75,16 @@ uint8_t App_Chassis_Write_Output(const ChassisMotorMap *map,
 
     // 每路都尝试设置，统计成功数量，不因一路失败跳过其他轮。
     valid_count += BSP_Motor_Set_Output(
-        map->front_left, (int16_t)output->front_left);
+        map->front_left, Chassis_IO_ToDuty(output->front_left, CHASSIS_OUTPUT_SIGN_FL));
 
     valid_count += BSP_Motor_Set_Output(
-        map->front_right, (int16_t)output->front_right);
+        map->front_right, Chassis_IO_ToDuty(output->front_right, CHASSIS_OUTPUT_SIGN_FR));
 
     valid_count += BSP_Motor_Set_Output(
-        map->rear_left, (int16_t)output->rear_left);
+        map->rear_left, Chassis_IO_ToDuty(output->rear_left, CHASSIS_OUTPUT_SIGN_RL));
 
     valid_count += BSP_Motor_Set_Output(
-        map->rear_right, (int16_t)output->rear_right);
+        map->rear_right, Chassis_IO_ToDuty(output->rear_right, CHASSIS_OUTPUT_SIGN_RR));
 
     return valid_count == BSP_MOTOR_COUNT;
 }

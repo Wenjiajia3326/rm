@@ -115,7 +115,7 @@ uint8_t App_Chassis_Update_Wheel(const MecanumConfig *config,
 ///       失败时有效标志置0，保留旧轮速，旧值不可当成本次反馈使用。
 ///       固定周期顺序调用；漏采样时以NULL通知本函数，重新建立起点。
 ///       更改计数配置前须重新初始化；每次真实计数变化须小于计数范围的一半。
-///       轮速符号沿用计数方向，接入PI前须统一为推动整车前进时为正。
+///       本接口按app_config中的编码器符号统一反馈，推动车身前进为正；调用者不要再次反号。
 ///       仅由同一主循环顺序调用；不操作硬件，也不自动检测反馈超时。
 MotorSampleResult App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
                                    uint32_t count_range,
@@ -130,6 +130,7 @@ MotorSampleResult App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
 /// @param output_max 驱动请求上限，单位为驱动千分比，须与后续BSP允许范围一致。
 /// @return 四轮全部初始化成功返回1，否则返回0并禁止PI计算。
 /// @note 所有参数必须有限；先调用App_Chassis_Init。
+///       输出范围还会与方向补偿反算出的各轮范围取交集；当前左轮[-500,600]、右轮[-600,500]。
 ///       仅在停止控制计算时配置，成功配置会清空四轮积分。
 ///       本函数不操作硬件，不自动停止电机；调用者须先确保停止输出。
 uint8_t App_Chassis_Init_PI(float kp,

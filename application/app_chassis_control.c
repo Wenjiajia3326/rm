@@ -1,6 +1,7 @@
 // 底盘运动控制：斜坡、麦轮解算、轮速反馈与速度 PI。
 #include "app_chassis_control.h"
 #include "app_chassis_wheels.h"
+#include "app_config.h"
 #include "ramp.h"
 #include <math.h>
 #include <stddef.h>
@@ -181,10 +182,11 @@ MotorSampleResult App_Chassis_Update_Feedback(const ChassisEncoder *encoder,
     }
 
     // 只有四轮均有效，才读取临时轮速并提交完整反馈。
-    wheel_feedback.front_left = next_speed[WHEEL_FRONT_LEFT];
-    wheel_feedback.front_right = next_speed[WHEEL_FRONT_RIGHT];
-    wheel_feedback.rear_left = next_speed[WHEEL_REAR_LEFT];
-    wheel_feedback.rear_right = next_speed[WHEEL_REAR_RIGHT];
+    // motor与Wheel保留原始计数方向，此处仅修正一次，前进反馈统一为正。
+    wheel_feedback.front_left = next_speed[WHEEL_FRONT_LEFT] * CHASSIS_ENCODER_SIGN_FL;
+    wheel_feedback.front_right = next_speed[WHEEL_FRONT_RIGHT] * CHASSIS_ENCODER_SIGN_FR;
+    wheel_feedback.rear_left = next_speed[WHEEL_REAR_LEFT] * CHASSIS_ENCODER_SIGN_RL;
+    wheel_feedback.rear_right = next_speed[WHEEL_REAR_RIGHT] * CHASSIS_ENCODER_SIGN_RR;
     wheel_feedback_valid = 1;
     return MOTOR_SAMPLE_VALID;
 }
@@ -197,13 +199,26 @@ uint8_t App_Chassis_Init_PI(float kp,
 {
     uint8_t valid_count = 0U;
     uint8_t wheel_index;
+    const int8_t output_sign[WHEEL_COUNT] = {
+        CHASSIS_OUTPUT_SIGN_FL, CHASSIS_OUTPUT_SIGN_FR,
+        CHASSIS_OUTPUT_SIGN_RL, CHASSIS_OUTPUT_SIGN_RR
+    };
 
     // 每轮参数可以相同，但积分记录独立。全部成功才允许计算。
     chassis_pi_ready = 0;
     for (wheel_index = 0U; wheel_index < WHEEL_COUNT; wheel_index++)
     {
+        // 将补偿后的硬件范围反算到PI域，让条件积分看到真实饱和点。
+        // 当前硬件正向可达1000，乘2之前只能到500；反向可到-600。
+        const float positive_limit = CHASSIS_HARDWARE_DUTY_MAX /
+                                     CHASSIS_POSITIVE_DUTY_SCALE;
+        const float wheel_min = output_sign[wheel_index] > 0 ?
+            CHASSIS_HARDWARE_DUTY_MIN : -positive_limit;
+        const float wheel_max = output_sign[wheel_index] > 0 ?
+            positive_limit : -CHASSIS_HARDWARE_DUTY_MIN;
         valid_count += Chassis_Wheel_InitPI(wheel_index, kp, ki, integral_max,
-                                           output_min, output_max);
+                                           fmaxf(output_min, wheel_min),
+                                           fminf(output_max, wheel_max));
     }
     if (valid_count != WHEEL_COUNT)
     {
