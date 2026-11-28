@@ -61,20 +61,6 @@ void App_Robot_OnLinkLost(void);
 uint8_t App_Robot_GetMode(void);
 
 /**
- * @brief 设置地形档（来自帧内 terrain 字段）
- * @param terrain 地形档取值（TERRAIN_*_V）
- * @return 无
- */
-void App_Robot_SetTerrain(uint8_t terrain);
-
-/**
- * @brief 取当前地形档
- * @param  无
- * @return 地形档取值
- */
-uint8_t App_Robot_GetTerrain(void);
-
-/**
  * @brief 设置放置高度档（来自帧内 level 字段）
  * @param level 高度档索引
  * @return 无

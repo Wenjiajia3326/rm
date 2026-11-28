@@ -252,7 +252,6 @@ static void App_Remote_HandleFrame(const RemoteData_t *data)
 
     /* 状态字段：直接应用（值不变也无害） */
     App_Robot_ApplyMode(data->mode);
-    App_Robot_SetTerrain(data->terrain);
     App_Robot_SetLevel(data->level);
     /* 自动阶段载荷由流程维护：开局携块，放置完成后自动置空载 */
     if (App_Robot_GetMode() != APP_MODE_COMP_AUTO_V)

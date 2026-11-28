@@ -77,8 +77,8 @@
 /* btn_low：动作键 + 旋转键（位定义） */
 #define RC_BTN_ARM_READY                0x01U   ///< A 伸臂准备（回收纳位→伸出）
 #define RC_BTN_ARM_PICK                 0x02U   ///< B 夹紧并抬起
-#define RC_BTN_ARM_PLACE                0x04U   ///< C 下降+松开+后撤
-#define RC_BTN_ARM_HOME                 0x08U   ///< D 收回
+#define RC_BTN_ARM_HOME                 0x04U   ///< C 收回（丝印 C，收到收纳位）
+#define RC_BTN_ARM_PLACE                0x08U   ///< D 放置（丝印 D，下降+松开+后撤）
 #define RC_BTN_ROT_FAST_LEFT            0x10U   ///< 快速左旋（按住）；调试模式：选关节 1（底座）
 #define RC_BTN_ROT_FAST_RIGHT           0x20U   ///< 快速右旋（按住）；调试模式：选关节 2（下臂）
 #define RC_BTN_ROT_SLOW_LEFT            0x40U   ///< 精细左旋（按住）；调试模式：选关节 3（上臂）
@@ -100,15 +100,14 @@
 
 #define TERRAIN_ROAD_V                  0U      ///< 平路
 #define TERRAIN_BUMP_V                  1U      ///< 颠簸
-#define TERRAIN_TUNNEL_V                2U      ///< 隧道（手动过隧道时压到 40%）
 
 #define LOAD_EMPTY_V                    0U      ///< 空载
 #define LOAD_CARRY_V                    1U      ///< 携块
 
 /* ---- 数量：仅用于数组长度与边界检查，不对应任何取值 ---- */
 #define APP_MODE_NUM                    5U      ///< 模式数量
-#define TERRAIN_NUM                     3U      ///< 地形档数量（平路/颠簸/隧道）
-#define LEVEL_NUM                       3U      ///< 高度档数量（机械B 标定后调整）
+#define TERRAIN_NUM                     2U      ///< 地形档数量（平路/颠簸；隧道=平地，不再单列）
+#define LEVEL_NUM                       5U      ///< 高度档数量（2026-11-23 改为 5 档）
 
 /* ===================== 五、舵机（owner：电控B，数值待机械B 标定） ===================== */
 #define SERVO_ID_BASE                   1U      ///< 底座旋转（单轴，机械B 串联顺序 1）
@@ -127,7 +126,6 @@
 #define CHASSIS_LIMIT_NORMAL_PCT        100U    ///< 收纳态行驶
 #define CHASSIS_LIMIT_ARM_OUT_PCT       50U     ///< 臂伸出时行驶
 #define CHASSIS_LIMIT_CARRY_PCT         70U     ///< 携块运输
-#define CHASSIS_LIMIT_TUNNEL_PCT        40U     ///< 过隧道姿态
 #define CHASSIS_LIMIT_ACTION_PCT        0U      ///< 抓放动作进行中：禁止行驶
 
 /* ===================== 八、调度与任务（owner：电控B） ===================== */

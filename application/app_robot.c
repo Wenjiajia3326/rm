@@ -14,9 +14,6 @@
 /** 当前模式（APP_MODE_*_V） */
 static uint8_t s_mode;
 
-/** 当前地形档（TERRAIN_*_V） */
-static uint8_t s_terrain;
-
 /** 当前放置高度档索引 */
 static uint8_t s_level;
 
@@ -72,8 +69,8 @@ static void App_Robot_EnterMode(uint8_t mode)
             break;
     }
 
-    LOG("mode -> %s (terrain=%u level=%u load=%u)\r\n",
-        App_Robot_GetModeName(mode), s_terrain, s_level, s_load);
+    LOG("mode -> %s (level=%u load=%u)\r\n",
+        App_Robot_GetModeName(mode), s_level, s_load);
 }
 
 /**
@@ -95,7 +92,6 @@ static void App_Robot_ExitMode(uint8_t mode)
 void App_Robot_Init(void)
 {
     s_mode    = APP_MODE_INIT_V;
-    s_terrain = TERRAIN_ROAD_V;
     s_level   = 0U;
     s_load    = LOAD_EMPTY_V;
 }
@@ -153,16 +149,6 @@ void App_Robot_OnLinkLost(void)
 uint8_t App_Robot_GetMode(void)
 {
     return s_mode;
-}
-
-void App_Robot_SetTerrain(uint8_t terrain)
-{
-    s_terrain = terrain;
-}
-
-uint8_t App_Robot_GetTerrain(void)
-{
-    return s_terrain;
 }
 
 void App_Robot_SetLevel(uint8_t level)
